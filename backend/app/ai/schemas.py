@@ -17,6 +17,20 @@ class RunResponse(BaseModel):
     response: str
 
 
+class ContextRunRequest(BaseModel):
+    """Same as RunRequest plus optional additional context passed into the run."""
+    message: str
+    system_prompt: str | None = None
+    agent_id: str | None = None
+    use_rag: bool = True
+    model: str | None = None
+    additional_context: str | None = None
+
+
+class ContextRunResponse(BaseModel):
+    response: str
+
+
 # ── Orchestrated pipeline ──
 
 

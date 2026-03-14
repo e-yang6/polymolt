@@ -14,6 +14,8 @@ from app.ai.rag import retrieve, add_documents, get_collection
 from app.ai.schemas import (
     RunRequest,
     RunResponse,
+    ContextRunRequest,
+    ContextRunResponse,
     OrchestratorRequest,
     OrchestratorResponse,
     OrchestratorPhase1Response,
@@ -44,7 +46,7 @@ def agents():
 
 @router.post("/run", response_model=RunResponse)
 def run(request: RunRequest):
-    """Run a single-agent pipeline: RAG (optional) + system prompt + LLM."""
+    """Run a single-agent pipeline: RAG (optional) + system prompt + LLM. No additional context."""
     response = run_pipeline(
         message=request.message,
         system_prompt=request.system_prompt,
@@ -53,6 +55,20 @@ def run(request: RunRequest):
         model=request.model,
     )
     return RunResponse(response=response)
+
+
+@router.post("/contextrun", response_model=ContextRunResponse)
+def contextrun(request: ContextRunRequest):
+    """Run the same agent pipeline with optional additional context (e.g. orchestrator-assigned RAG)."""
+    response = run_pipeline(
+        message=request.message,
+        system_prompt=request.system_prompt,
+        agent_id=request.agent_id,
+        use_rag=request.use_rag,
+        model=request.model,
+        additional_context=request.additional_context,
+    )
+    return ContextRunResponse(response=response)
 
 
 @router.post("/run/chudbot1", response_model=ChudbotTestResponse)

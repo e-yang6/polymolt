@@ -46,9 +46,10 @@ def run_pipeline(
     agent_id: str | None = None,
     use_rag: bool = True,
     model: str | None = None,
+    additional_context: str | None = None,
 ) -> str:
     """
-    Run the pipeline: optional RAG retrieval + prompt (system + context + message) → LLM → response.
+    Run the pipeline: optional RAG retrieval + optional additional context + prompt → LLM → response.
     """
     if use_rag and not OPENAI_API_KEY:
         return "Error: OPENAI_API_KEY required for RAG (embeddings)."
@@ -61,5 +62,9 @@ def run_pipeline(
     else:
         context_block = ""
 
-    user_content = f"{context_block}{message}"
+    extra_block = ""
+    if additional_context and additional_context.strip():
+        extra_block = f"Additional context:\n{additional_context.strip()}\n\n"
+
+    user_content = f"{context_block}{extra_block}{message}"
     return generate(user_content, system_prompt=system, model=chat_model, max_tokens=CHAT_MAX_TOKENS)
