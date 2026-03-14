@@ -1,4 +1,4 @@
-"""Google Gemini provider — chat generation (uses google-generativeai)."""
+"""Google Gemini provider — chat generation and embeddings (uses google.genai)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from app.config import GOOGLE_API_KEY
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemini-1.5-flash"
+DEFAULT_EMBED_MODEL = "models/embedding-001"
 
 
 def generate(
@@ -23,19 +24,20 @@ def generate(
     if not GOOGLE_API_KEY:
         return "Error: GOOGLE_API_KEY is not set."
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GOOGLE_API_KEY)
-        
-        kwargs: dict = {}
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        config_kwargs: dict = {"max_output_tokens": max_tokens}
         if system_prompt:
-            kwargs["system_instruction"] = system_prompt
-        
-        agent = genai.GenerativeModel(model_name, **kwargs)
-        resp = agent.generate_content(
-            user_prompt,
-            generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens)
+            config_kwargs["system_instruction"] = system_prompt
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(**config_kwargs),
         )
-        return (resp.text or "").strip()
+        return (response.text or "").strip()
     except Exception as e:
         logger.exception("Gemini generate failed")
         return f"Error: {e!s}"
@@ -43,14 +45,22 @@ def generate(
 
 def embed(text: str, model: str | None = None) -> list[float]:
     """Return an embedding vector for *text* using Gemini, or [] on failure."""
-    model_name = (model or "models/embedding-001").strip()
+    model_name = (model or DEFAULT_EMBED_MODEL).strip()
     if not GOOGLE_API_KEY:
         return []
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GOOGLE_API_KEY)
-        result = genai.embed_content(model=model_name, content=text, task_type="retrieval_document")
-        return result["embedding"]
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        result = client.models.embed_content(
+            model=model_name,
+            contents=text,
+            config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
+        )
+        if not result.embeddings:
+            return []
+        return list(result.embeddings[0].values)
     except Exception as e:
         logger.warning("Gemini embed failed: %s", e)
         return []
