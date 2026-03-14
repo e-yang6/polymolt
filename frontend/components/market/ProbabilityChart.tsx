@@ -10,23 +10,70 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts"
+import { TradeEntry } from "@/types/trade"
+
+interface DataPoint {
+  trade: number
+  probability: number
+  agentName?: string
+  direction?: "BUY" | "SELL"
+}
 
 interface Props {
   priceHistory: number[]
+  trades?: TradeEntry[]
 }
 
 function formatPct(v: number) {
-  return `${Math.round(v * 100)}%`
+  return `${(v * 100).toFixed(1)}%`
 }
 
-export function ProbabilityChart({ priceHistory }: Props) {
-  const data = priceHistory.map((p, i) => ({ trade: i + 1, probability: p }))
+interface TooltipProps {
+  active?: boolean
+  payload?: Array<{ value: number; payload: DataPoint }>
+}
 
-  const currentPrice = priceHistory[priceHistory.length - 1] ?? 0.5
+function ChartTooltip({ active, payload }: TooltipProps) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  const isBuy = d.direction === "BUY"
+  return (
+    <div style={{
+      backgroundColor: "#0f172a",
+      border: "1px solid #1e293b",
+      borderRadius: 8,
+      padding: "8px 12px",
+      minWidth: 120,
+    }}>
+      <div style={{ color: "#64748b", fontSize: 11, marginBottom: 4 }}>Trade #{d.trade}</div>
+      {d.agentName && (
+        <div style={{ color: isBuy ? "#34d399" : "#f87171", fontSize: 11, marginBottom: 2 }}>
+          {d.direction} · {d.agentName}
+        </div>
+      )}
+      <div style={{ color: "#f8fafc", fontSize: 14, fontWeight: 700 }}>
+        {formatPct(d.probability)}
+      </div>
+    </div>
+  )
+}
+
+export function ProbabilityChart({ priceHistory, trades }: Props) {
+  // Build data from trades (chronological) if available, else from priceHistory
+  const data: DataPoint[] = trades && trades.length > 0
+    ? [...trades].reverse().map((t, i) => ({
+        trade: i + 1,
+        probability: t.priceAfter,
+        agentName: t.agentName,
+        direction: t.direction,
+      }))
+    : priceHistory.map((p, i) => ({ trade: i + 1, probability: p }))
+
+  const currentPrice = data[data.length - 1]?.probability ?? 0.5
   const lineColor =
-    currentPrice >= 0.55 ? "#34d399" :   // emerald
-    currentPrice <= 0.40 ? "#f87171" :   // rose
-    "#fbbf24"                             // amber
+    currentPrice >= 0.55 ? "#34d399" :
+    currentPrice <= 0.40 ? "#f87171" :
+    "#fbbf24"
 
   if (data.length < 2) {
     return (
@@ -53,15 +100,9 @@ export function ProbabilityChart({ priceHistory }: Props) {
           tick={{ fill: "#475569", fontSize: 11 }}
           axisLine={{ stroke: "#1e293b" }}
           tickLine={false}
-          width={38}
+          width={44}
         />
-        <Tooltip
-          contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b", borderRadius: 6 }}
-          labelStyle={{ color: "#64748b", fontSize: 11 }}
-          formatter={(value) => [formatPct(Number(value)), "Probability"]}
-          labelFormatter={(label) => `Trade ${label}`}
-          itemStyle={{ color: lineColor }}
-        />
+        <Tooltip content={<ChartTooltip />} />
         <ReferenceLine
           y={0.5}
           stroke="#334155"
@@ -74,7 +115,7 @@ export function ProbabilityChart({ priceHistory }: Props) {
           stroke={lineColor}
           strokeWidth={2}
           dot={false}
-          activeDot={{ r: 4, fill: lineColor }}
+          activeDot={{ r: 5, fill: lineColor, stroke: "#0f172a", strokeWidth: 2 }}
           isAnimationActive={false}
         />
       </LineChart>

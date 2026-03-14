@@ -5,10 +5,10 @@ import { EvidenceItem } from "@/types/evidence"
 import { CategoryBadge } from "@/components/shared/CategoryBadge"
 import { AgentTypeBadge } from "@/components/shared/AgentTypeBadge"
 import { X, ArrowUp, ArrowDown } from "lucide-react"
-import { CATEGORY_LABELS } from "@/lib/constants"
 
 interface Props {
   agent: Agent | null
+  marketPrice?: number
   onClose: () => void
 }
 
@@ -54,7 +54,31 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
   )
 }
 
-export function AgentDrawer({ agent, onClose }: Props) {
+function BeliefSparkline({ history, color }: { history: number[]; color: string }) {
+  if (history.length < 2) return null
+  const W = 200
+  const H = 36
+  const pts = history
+    .map((v, i) => {
+      const x = (i / (history.length - 1)) * W
+      const y = H - v * H
+      return `${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(" ")
+  const lastX = W
+  const lastY = H - history[history.length - 1] * H
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} className="overflow-visible">
+      {/* 50% reference line */}
+      <line x1={0} y1={H / 2} x2={W} y2={H / 2} stroke="#1e293b" strokeWidth={1} strokeDasharray="3 3" />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" opacity={0.9} />
+      <circle cx={lastX} cy={lastY} r={3} fill={color} />
+    </svg>
+  )
+}
+
+export function AgentDrawer({ agent, marketPrice, onClose }: Props) {
   if (!agent) return null
 
   const beliefPct = Math.round(agent.currentBelief * 100)
@@ -62,9 +86,13 @@ export function AgentDrawer({ agent, onClose }: Props) {
     beliefPct >= 55 ? "text-emerald-400" :
     beliefPct <= 40 ? "text-rose-400" :
     "text-amber-400"
+  const sparklineColor =
+    beliefPct >= 55 ? "#34d399" :
+    beliefPct <= 40 ? "#f87171" :
+    "#fbbf24"
 
   return (
-    <div className="fixed inset-y-0 right-0 z-50 w-[420px] bg-slate-950 border-l border-slate-800 overflow-y-auto shadow-2xl">
+    <div className="animate-slide-in-right fixed inset-y-0 right-0 z-50 w-[420px] bg-slate-950 border-l border-slate-800 overflow-y-auto shadow-2xl">
       {/* Header */}
       <div className="sticky top-0 bg-slate-950/95 backdrop-blur px-5 py-4 border-b border-slate-800 flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1.5">
@@ -100,10 +128,37 @@ export function AgentDrawer({ agent, onClose }: Props) {
             <div className="text-slate-600 text-lg">vs</div>
             <div className="flex flex-col items-center px-4 py-2.5 bg-slate-900 rounded-lg border border-slate-800">
               <span className="text-xs text-slate-500 mb-0.5">Market</span>
-              <span className="text-2xl font-black text-slate-300">—</span>
+              <span className="text-2xl font-black text-slate-300">
+                {marketPrice !== undefined ? `${Math.round(marketPrice * 100)}%` : "—"}
+              </span>
             </div>
+            {marketPrice !== undefined && (
+              <div className="flex flex-col items-center px-3 py-2.5">
+                <span className="text-xs text-slate-600 mb-0.5">Gap</span>
+                <span className={`text-lg font-bold ${Math.abs(agent.currentBelief - marketPrice) > 0.1 ? "text-amber-400" : "text-slate-500"}`}>
+                  {((agent.currentBelief - marketPrice) * 100).toFixed(1)}pp
+                </span>
+              </div>
+            )}
           </div>
         </section>
+
+        {/* Belief Sparkline */}
+        {agent.beliefHistory && agent.beliefHistory.length > 2 && (
+          <section>
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              Belief History ({agent.beliefHistory.length} updates)
+            </h3>
+            <div className="bg-slate-900 rounded-lg border border-slate-800 px-3 py-2">
+              <BeliefSparkline history={agent.beliefHistory} color={sparklineColor} />
+              <div className="flex justify-between mt-1 text-xs text-slate-600">
+                <span>earliest</span>
+                <span>— 50% —</span>
+                <span>latest</span>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Categories */}
         <section>
@@ -119,7 +174,10 @@ export function AgentDrawer({ agent, onClose }: Props) {
         <section>
           <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Behavior Traits</h3>
           <div className="space-y-2">
-            <TraitBar label="Confidence" value={agent.confidence} />
+            <TraitBar label="Confidence (base)" value={agent.confidence} />
+            {agent.effectiveConfidence !== undefined && (
+              <TraitBar label="Confidence (live)" value={agent.effectiveConfidence} />
+            )}
             <TraitBar label="Risk Tolerance" value={agent.riskTolerance} />
             <TraitBar label="Stubbornness" value={agent.stubbornness} />
             <TraitBar label="Herd Sensitivity" value={agent.herdSensitivity} />
@@ -128,6 +186,11 @@ export function AgentDrawer({ agent, onClose }: Props) {
           {agent.contrarian && (
             <div className="mt-2 text-xs text-rose-400 bg-rose-400/10 border border-rose-400/20 rounded px-2 py-1">
               ↺ Contrarian — trades against consensus
+            </div>
+          )}
+          {agent.maxPosition !== undefined && (
+            <div className="mt-2 text-xs text-slate-600">
+              Position cap: ±{agent.maxPosition} units
             </div>
           )}
         </section>

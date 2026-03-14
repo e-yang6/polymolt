@@ -53,8 +53,8 @@ cd frontend && npm install && npm run dev
 - Agent knowledge access controls which evidence they can read
 
 ## Phase Status
-- [ ] Phase 1: Scaffold + MVP
-- [ ] Phase 2: Market Realism
-- [ ] Phase 3: RAG/Langflow Architecture
-- [ ] Phase 4: UI Polish
-- [ ] Phase 5: Demo Readiness
+- [x] Phase 1: Scaffold + MVP — COMPLETE
+- [x] Phase 2: Market Realism — COMPLETE
+- [x] Phase 3: RAG/Langflow Architecture — COMPLETE
+- [x] Phase 4: UI Polish — COMPLETE
+- [x] Phase 5: Demo Readiness — COMPLETE

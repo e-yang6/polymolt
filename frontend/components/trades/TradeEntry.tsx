@@ -27,7 +27,7 @@ export function TradeEntryRow({ trade, onAgentClick }: Props) {
   const deltaSign = delta >= 0 ? "+" : ""
 
   return (
-    <div className="flex flex-col gap-1 px-3 py-2.5 border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors">
+    <div className={`animate-slide-in-down flex flex-col gap-1 px-3 py-2.5 border-b border-slate-800/60 border-l-2 hover:bg-slate-800/30 transition-colors ${isBuy ? "border-l-emerald-500/50" : "border-l-rose-500/50"}`}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <div className={`flex-shrink-0 flex items-center gap-0.5 text-xs font-semibold ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>

@@ -11,17 +11,17 @@ import logging
 from app.core.state import AppState, AgentState
 from app.agents.belief_engine import form_belief
 from app.agents.trade_engine import compute_trade
-from app.agents.reasoning import template_reason
+from app.rag.reasoning import agent_reasoner      # Phase 3: routes template or Langflow
 from app.market.lmsr import apply_trade
 from fastapi import WebSocket
 
+from app.core.config import config
+
 logger = logging.getLogger(__name__)
 
-# Delay between individual agent trades (seconds)
-TRADE_INTERVAL = 1.2
-
-# Delay between full rounds (seconds)
-ROUND_INTERVAL = 2.0
+# Configurable via TRADE_INTERVAL and ROUND_INTERVAL env vars (see core/config.py)
+TRADE_INTERVAL = config.TRADE_INTERVAL_SECONDS
+ROUND_INTERVAL = config.ROUND_INTERVAL_SECONDS
 
 
 async def broadcast(state: AppState, message: dict):
@@ -80,29 +80,42 @@ async def run_simulation(state: AppState):
 
 async def _process_agent_turn(state: AppState, agent_state: AgentState):
     """Run one agent's belief update and potential trade."""
+    try:
+        await _process_agent_turn_inner(state, agent_state)
+    except Exception as e:
+        logger.warning(f"Agent turn error ({agent_state.config.id}): {e}")
+
+
+async def _process_agent_turn_inner(state: AppState, agent_state: AgentState):
+    """Inner logic — separated so outer wrapper can catch and skip on error."""
     market_price = state.market.current_price
+    momentum = state.market.price_momentum
     region_id = state.market.region_id
 
-    # Form new belief
+    # Form new belief — now with momentum signal
     new_belief, evidence_used = form_belief(
         agent=agent_state.config,
         region_id=region_id,
         prior_belief=agent_state.current_belief,
         market_price=market_price,
+        momentum=momentum,
     )
     agent_state.current_belief = new_belief
     agent_state.evidence_used = evidence_used
 
-    # Decide whether to trade
+    # Decide whether to trade — now with effective_confidence and position
     direction, size = compute_trade(
         agent=agent_state.config,
         private_belief=new_belief,
         market_price=market_price,
         evidence_used=evidence_used,
+        effective_confidence=agent_state.effective_confidence,
+        current_position=agent_state.current_position,
     )
 
     if direction is None:
-        # Agent skips this round — still broadcast belief update
+        # Agent skips this round — apply confidence decay, broadcast belief update
+        agent_state.apply_confidence_decay()
         await broadcast(state, {
             "type": "agent_update",
             "data": agent_state.to_dict(),
@@ -120,25 +133,26 @@ async def _process_agent_turn(state: AppState, agent_state: AgentState):
     state.market.q_yes = new_q_yes
     state.market.q_no = new_q_no
 
-    # Generate reasoning
-    reasoning = template_reason(
+    # Generate reasoning — routes through AgentReasoner (template or Langflow)
+    reason_result = agent_reasoner.reason(
         agent=agent_state.config,
-        evidence_used=evidence_used,
-        private_belief=new_belief,
+        evidence=evidence_used,
         market_price=price_before,
+        region_id=region_id,
+        private_belief=new_belief,
         direction=direction,
         trade_size=size,
     )
-    agent_state.last_reasoning = reasoning
+    agent_state.last_reasoning = reason_result.reasoning
 
-    # Record trade
+    # Record trade (also calls refresh_confidence internally)
     trade = state.record_trade(
         agent_state=agent_state,
         direction=direction,
         size=size,
         price_before=price_before,
         price_after=price_after,
-        reasoning=reasoning,
+        reasoning=reason_result.reasoning,
         evidence_used=evidence_used,
     )
 

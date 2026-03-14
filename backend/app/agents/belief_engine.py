@@ -2,12 +2,15 @@
 Belief formation logic for agents.
 Each agent reads its accessible evidence and forms a private probability estimate.
 
-TODO: RAG — replace get_evidence() calls with CategoryRetriever.retrieve()
+Evidence is fetched via CategoryRetriever (app.rag.retrieval), which is the
+single RAG integration seam. Swap to real vector retrieval by setting
+RAG_ENABLED=true in config and implementing CategoryRetriever._vector_retrieve().
 """
 
 import random
 from app.agents.agent_config import AgentConfig
-from app.data.evidence import EvidenceItem, get_evidence
+from app.data.evidence import EvidenceItem
+from app.rag.access import get_retrievers_for_agent
 
 
 def compute_evidence_belief(evidence_items: list[EvidenceItem]) -> tuple[float, float]:
@@ -45,39 +48,55 @@ def form_belief(
     region_id: str,
     prior_belief: float,
     market_price: float,
+    momentum: float = 0.0,
 ) -> tuple[float, list[EvidenceItem]]:
     """
     Agent forms a new private belief based on:
     1. Evidence from accessible categories (raw evidence belief)
     2. Prior belief (stubbornness blend)
-    3. Market price (herd sensitivity nudge)
+    3. Market price + momentum (herd sensitivity nudge)
+
+    momentum: recent price trend (-0.05 to 0.05). Positive = rising market.
+    High herd_sensitivity agents amplify momentum in their herd nudge.
+
+    Evidence access goes through get_retrievers_for_agent() → CategoryRetriever.retrieve().
+    This is the primary RAG integration point.
 
     Returns (new_belief, evidence_used).
 
-    TODO: RAG — replace get_evidence(region_id, cat) with CategoryRetriever(cat).retrieve(region_id)
+    Evidence is retrieved via CategoryRetriever — the RAG integration point.
+    To swap in real retrieval: set RAG_ENABLED=true and implement the vector
+    store path in app.rag.retrieval.CategoryRetriever.retrieve().
     """
     all_evidence: list[EvidenceItem] = []
-    for category in agent.categories:
-        items = get_evidence(region_id, category)  # TODO: RAG
+    retrievers = get_retrievers_for_agent(agent)   # access-controlled retriever list
+    for retriever in retrievers:
+        items = retriever.retrieve(region_id)      # TODO: RAG seam — see retrieval.py
         all_evidence.extend(items)
 
     if not all_evidence:
         return prior_belief, []
 
     # Add small noise to simulate real-world uncertainty
-    noise = random.gauss(0, 0.03)
+    noise = random.gauss(0, 0.025)
     raw_belief, _ = compute_evidence_belief(all_evidence)
     raw_belief = max(0.05, min(0.95, raw_belief + noise))
 
-    # Stubbornness: blend raw belief with prior
+    # Stubbornness: blend raw belief with prior (belief persistence)
     blended = raw_belief * (1 - agent.stubbornness) + prior_belief * agent.stubbornness
 
-    # Herd sensitivity: nudge toward (or away from) market price
+    # Momentum-adjusted herd target:
+    # High herd_sensitivity agents follow both level AND direction of market.
+    # momentum is scaled and clipped to prevent runaway effects.
+    momentum_nudge = momentum * agent.herd_sensitivity * 8.0  # amplify momentum signal
+    momentum_nudge = max(-0.08, min(0.08, momentum_nudge))
+
     if agent.contrarian:
-        # Contrarian agents push away from market price
-        herd_target = 1.0 - market_price
+        herd_target = 1.0 - market_price - momentum_nudge
     else:
-        herd_target = market_price
+        herd_target = market_price + momentum_nudge
+
+    herd_target = max(0.05, min(0.95, herd_target))
 
     final_belief = blended * (1 - agent.herd_sensitivity) + herd_target * agent.herd_sensitivity
     final_belief = max(0.05, min(0.95, final_belief))

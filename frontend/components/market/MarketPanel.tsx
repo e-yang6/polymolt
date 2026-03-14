@@ -1,15 +1,17 @@
 "use client"
 
 import { MarketState, Region } from "@/types/market"
+import { TradeEntry } from "@/types/trade"
 import { ProbabilityDisplay } from "./ProbabilityDisplay"
 import { ProbabilityChart } from "./ProbabilityChart"
 
 interface Props {
   market: MarketState | null
   region: Region | null
+  trades?: TradeEntry[]
 }
 
-export function MarketPanel({ market, region }: Props) {
+export function MarketPanel({ market, region, trades }: Props) {
   return (
     <div className="flex flex-col gap-4 p-5 bg-slate-900 rounded-xl border border-slate-800 h-full">
       {market ? (
@@ -27,7 +29,7 @@ export function MarketPanel({ market, region }: Props) {
           )}
 
           <div className="flex-1 min-h-[220px]">
-            <ProbabilityChart priceHistory={market.priceHistory} />
+            <ProbabilityChart priceHistory={market.priceHistory} trades={trades} />
           </div>
 
           <div className="flex items-center gap-4 text-xs text-slate-600 border-t border-slate-800 pt-3">

@@ -22,3 +22,41 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Slide in from right — agent drawer */
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Slide in from top — new trade feed entries */
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-in-down {
+  animation: slideInDown 0.18s ease-out;
+}
+
+/* Pulse once — probability display on price change */
+@keyframes pulseOnce {
+  0%   { opacity: 1; transform: scale(1); }
+  40%  { opacity: 0.6; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-pulse-once {
+  animation: pulseOnce 0.35s ease-in-out;
+}
+
+/* Flash update — agent card belief change */
+@keyframes flashUpdate {
+  0%   { background-color: transparent; }
+  25%  { background-color: rgba(99, 102, 241, 0.18); }
+  100% { background-color: transparent; }
+}
+.animate-flash-update {
+  animation: flashUpdate 0.55s ease-out;
+}
