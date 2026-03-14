@@ -29,7 +29,7 @@ class StakeholderAnalysis:
 
 
 def _call_llm(prompt: str, model: Optional[str] = None, max_tokens: int = 1024) -> str:
-    model_name = (model or "gemini-1.5-pro").strip()
+    model_name = (model or "gemini-2.5-flash").strip()
     if not GOOGLE_API_KEY:
         return "Error: GOOGLE_API_KEY required for Gemini models."
     try:
