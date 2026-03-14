@@ -18,10 +18,9 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict
 from typing import Any
 
-from app.config import CHAT_MODEL, OPENAI_API_KEY, GOOGLE_API_KEY
+from app.models import generate
 from app.ai.rag import retrieve
 from app.ai.web_scraper import scrape_web
 from app.agents.config import AGENTS, get_agent, AgentConfig
@@ -29,50 +28,11 @@ from app.agents.config import AGENTS, get_agent, AgentConfig
 logger = logging.getLogger(__name__)
 
 
-# ── helpers ──────────────────────────────────────────────────────────────
-
-def _is_gemini(model: str) -> bool:
-    return model.strip().lower().startswith("gemini-")
-
-
-def _call_llm(prompt: str, model: str | None = None, max_tokens: int = 1024) -> str:
-    """Thin wrapper that routes to OpenAI or Gemini."""
-    model = (model or CHAT_MODEL).strip()
-
-    if _is_gemini(model):
-        if not GOOGLE_API_KEY:
-            return "Error: GOOGLE_API_KEY required for Gemini models."
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=GOOGLE_API_KEY)
-            gen = genai.GenerativeModel(model)
-            resp = gen.generate_content(prompt)
-            return (resp.text or "").strip()
-        except Exception as e:
-            logger.exception("Orchestrator Gemini call failed")
-            return f"Error: {e!s}"
-    else:
-        if not OPENAI_API_KEY:
-            return "Error: OPENAI_API_KEY required for OpenAI models."
-        try:
-            from openai import OpenAI
-            client = OpenAI(api_key=OPENAI_API_KEY)
-            r = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-            )
-            return (r.choices[0].message.content or "").strip()
-        except Exception as e:
-            logger.exception("Orchestrator OpenAI call failed")
-            return f"Error: {e!s}"
-
-
 # ── Phase 1: Initial bets ───────────────────────────────────────────────
 
-_BET_PROMPT = """\
-You are {agent_name}. {system_prompt}
+_BET_SYSTEM = "You are {agent_name}. {system_prompt}"
 
+_BET_USER = """\
 A prediction market asks the following question:
 
 \"\"\"{question}\"\"\"
@@ -96,13 +56,9 @@ def _run_single_bet(
     model: str | None,
 ) -> dict[str, Any]:
     ctx = f"Context:\n{context}" if context else "(No additional context.)"
-    prompt = _BET_PROMPT.format(
-        agent_name=agent.name,
-        system_prompt=agent.system_prompt,
-        question=question,
-        context_block=ctx,
-    )
-    raw = _call_llm(prompt, model=agent.model or model, max_tokens=300)
+    system = _BET_SYSTEM.format(agent_name=agent.name, system_prompt=agent.system_prompt)
+    user = _BET_USER.format(question=question, context_block=ctx)
+    raw = generate(user, system_prompt=system, model=agent.model or model, max_tokens=300)
 
     try:
         data = json.loads(raw)
@@ -132,9 +88,13 @@ def _run_all_bets(
 
 # ── Phase 2: Orchestrator ───────────────────────────────────────────────
 
-_EXPERTISE_PROMPT = """\
-You are an orchestrator for a sustainability prediction market.
+_EXPERTISE_SYSTEM = (
+    "You are an orchestrator for a sustainability prediction market. "
+    "Your job is to read the specialist agents' bets and the web research, "
+    "then assign the single best-qualified agent for deeper analysis."
+)
 
+_EXPERTISE_USER = """\
 Question: \"\"\"{question}\"\"\"
 
 The following specialist agents each placed a bet on this question:
@@ -146,8 +106,7 @@ Web research snippets:
 Available agents and their expertise:
 {agent_descriptions}
 
-Based on the question, the agents' reasoning, and the web research,
-decide which single agent is best suited to perform a deeper analysis.
+Decide which single agent is best suited to perform a deeper analysis.
 
 Respond with ONLY a strict JSON object:
 {{
@@ -174,13 +133,13 @@ def _identify_expertise(
     )
     snippets_text = "\n".join(web_snippets) if web_snippets else "(none)"
 
-    prompt = _EXPERTISE_PROMPT.format(
+    user = _EXPERTISE_USER.format(
         question=question,
         agent_summaries=agent_summaries,
         web_snippets=snippets_text,
         agent_descriptions=agent_descriptions,
     )
-    raw = _call_llm(prompt, model=model, max_tokens=300)
+    raw = generate(user, system_prompt=_EXPERTISE_SYSTEM, model=model, max_tokens=300)
 
     try:
         data = json.loads(raw)
@@ -201,9 +160,12 @@ def _identify_expertise(
 
 # ── Phase 2d: Deep analysis ─────────────────────────────────────────────
 
-_DEEP_ANALYSIS_PROMPT = """\
-You are {agent_name}. {system_prompt}
+_DEEP_SYSTEM = (
+    "You are {agent_name}. {system_prompt} "
+    "You have been selected as the most qualified analyst for this question."
+)
 
+_DEEP_USER = """\
 A prediction market is evaluating the question:
 
 \"\"\"{question}\"\"\"
@@ -216,7 +178,6 @@ Relevant web research:
 
 {context_block}
 
-You have been selected as the most qualified analyst for this question.
 Provide a thorough, evidence-based analysis. Consider the other analysts'
 perspectives and the web research. Conclude with your final assessment
 of whether the answer is YES or NO, and your overall confidence level.
@@ -241,15 +202,14 @@ def _run_deep_analysis(
     snippets_text = "\n".join(web_snippets) if web_snippets else "(none)"
     ctx = f"RAG context:\n{context}" if context else "(No RAG context available.)"
 
-    prompt = _DEEP_ANALYSIS_PROMPT.format(
-        agent_name=agent.name,
-        system_prompt=agent.system_prompt,
+    system = _DEEP_SYSTEM.format(agent_name=agent.name, system_prompt=agent.system_prompt)
+    user = _DEEP_USER.format(
         question=question,
         other_bets=other_bets,
         web_snippets=snippets_text,
         context_block=ctx,
     )
-    return _call_llm(prompt, model=agent.model or model, max_tokens=1024)
+    return generate(user, system_prompt=system, model=agent.model or model, max_tokens=1024)
 
 
 # ── Public entry point ───────────────────────────────────────────────────

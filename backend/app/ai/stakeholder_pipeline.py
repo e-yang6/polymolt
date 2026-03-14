@@ -5,7 +5,7 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 
-from app.config import GOOGLE_API_KEY
+from app.models import generate
 from app.ai.rag import retrieve
 from app.ai.langflow_client import run_websearch_flow
 
@@ -28,22 +28,13 @@ class StakeholderAnalysis:
     reasoning: str
 
 
-def _call_llm(prompt: str, model: Optional[str] = None, max_tokens: int = 1024) -> str:
-    model_name = (model or "gemini-1.5-pro").strip()
-    if not GOOGLE_API_KEY:
-        return "Error: GOOGLE_API_KEY required for Gemini models."
-    try:
-        from google import genai
-
-        genai.Client(api_key=GOOGLE_API_KEY)
-        gen_model = genai.GenerativeModel(model_name)
-        response = gen_model.generate_content(prompt)
-        if response.text:
-            return response.text.strip()
-        return "Error: No text in Gemini response."
-    except Exception as e:
-        logger.exception("Stakeholder pipeline Gemini call failed")
-        return f"Error: {e!s}"
+_STAKEHOLDER_SYSTEM = (
+    "You are a climate and sustainability analyst. "
+    "Given the user's question, identify the key stakeholders affected by the issue. "
+    "Stakeholders can be people, communities, companies, NGOs, governments, or ecosystems. "
+    "Return ONLY a strict JSON array of objects with fields: "
+    '"name", "type", and "description". Do not include any prose before or after the JSON.'
+)
 
 
 def identify_stakeholders(
@@ -51,20 +42,12 @@ def identify_stakeholders(
     context: Optional[str] = None,
     model: Optional[str] = None,
 ) -> List[Stakeholder]:
-    system_prompt = (
-        "You are a climate and sustainability analyst. "
-        "Given the user's question, identify the key stakeholders affected by the issue. "
-        "Stakeholders can be people, communities, companies, NGOs, governments, or ecosystems. "
-        "Return ONLY a strict JSON array of objects with fields: "
-        '"name", "type", and "description". Do not include any prose before or after the JSON.'
-    )
-    parts = [system_prompt, "\n\nUser question:\n", message]
+    parts = [message]
     if context:
-        parts.append("\n\nAdditional context:\n")
-        parts.append(context)
-    prompt = "".join(parts)
+        parts.append(f"\n\nAdditional context:\n{context}")
+    user_content = "".join(parts)
 
-    raw = _call_llm(prompt, model=model, max_tokens=800)
+    raw = generate(user_content, system_prompt=_STAKEHOLDER_SYSTEM, model=model, max_tokens=800)
     try:
         data = json.loads(raw)
     except Exception:
@@ -106,6 +89,13 @@ def run_stakeholder_search(
     return analyses
 
 
+_SUMMARIZE_SYSTEM = (
+    "You are a climate and sustainability analyst summarizing stakeholder-specific websearch results. "
+    "Write a concise overview of the situation, highlighting key risks, opportunities, and trade-offs "
+    "across stakeholders. Make the reasoning clear but keep the answer focused."
+)
+
+
 def summarize_analyses(
     message: str,
     analyses: List[StakeholderAnalysis],
@@ -114,21 +104,15 @@ def summarize_analyses(
     if not analyses:
         return "No stakeholder-specific analyses were generated."
 
-    system_prompt = (
-        "You are a climate and sustainability analyst summarizing stakeholder-specific websearch results. "
-        "Write a concise overview of the situation, highlighting key risks, opportunities, and trade-offs "
-        "across stakeholders. Make the reasoning clear but keep the answer focused."
-    )
-
-    lines: List[str] = [system_prompt, "\n\nUser question:\n", message, "\n\nStakeholder findings:\n"]
+    lines: List[str] = [message, "\n\nStakeholder findings:\n"]
     for a in analyses:
         lines.append(
             f"- Stakeholder: {a.stakeholder.name} ({a.stakeholder.type})\n"
             f"  Search query: {a.search_query}\n"
             f"  Websearch snippet: {a.search_snippet}\n"
         )
-    prompt = "".join(lines)
-    return _call_llm(prompt, model=model, max_tokens=800)
+    user_content = "".join(lines)
+    return generate(user_content, system_prompt=_SUMMARIZE_SYSTEM, model=model, max_tokens=800)
 
 
 def run_stakeholder_websearch_pipeline(
