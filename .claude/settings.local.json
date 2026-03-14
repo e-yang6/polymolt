@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(timeout 5 uvicorn main:app:*)",
+      "Bash(where python:*)",
+      "Bash(npm run:*)"
+    ]
+  }
+}
