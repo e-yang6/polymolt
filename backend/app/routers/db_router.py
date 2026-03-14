@@ -1,13 +1,240 @@
 """
-Database router — placeholder for future DB-backed routes.
+Database router — IBM Db2-backed endpoints for persisting questions and stakeholder AI perspectives.
 """
 
-from fastapi import APIRouter
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from app.db.db2 import (
+    StakeholderPerspective,
+    StakeholderResponseRow,
+    QuestionRow,
+    QuestionSummary,
+    create_question_only,
+    get_question_with_responses,
+    list_recent_questions,
+    save_question_with_perspectives,
+)
 
 router = APIRouter(prefix="/db", tags=["database"])
 
 
+class StakeholderPerspectiveIn(BaseModel):
+    """Request model for a single stakeholder AI perspective."""
+
+    stakeholder_id: str = Field(..., description="Stable identifier for the stakeholder.")
+    stakeholder_role: str = Field(..., description="Human-readable stakeholder role/title.")
+    ai_agent_id: str = Field(..., description="ID of the AI agent that took this stakeholder's role.")
+    answer: Literal["yes", "no"] = Field(..., description="Binary answer from this stakeholder AI.")
+    confidence: float | None = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Optional confidence score in [0,1].",
+    )
+    reasoning: str | None = Field(
+        None,
+        description="Optional free-text explanation from the AI.",
+    )
+    # Optional: arbitrary additional payload from your pipeline (e.g. full model output)
+    raw_payload: dict[str, Any] | None = Field(
+        None,
+        description="Optional raw model payload or extra fields.",
+    )
+
+
+class SaveQuestionRequest(BaseModel):
+    """
+    Persist a single user question and all stakeholder AI perspectives for that question.
+
+    This is intended to be called once per question after your pipeline
+    has:
+      1. Assigned a location
+      2. Generated all stakeholder AI yes/no answers
+    """
+
+    question: str = Field(..., description="The user's question in natural language.")
+    location: str = Field(..., description="Location assigned to this question.")
+    stakeholders: list[StakeholderPerspectiveIn] = Field(
+        ...,
+        description="All stakeholder AI perspectives for this question.",
+        min_items=1,
+    )
+
+
+class SaveQuestionResponse(BaseModel):
+    question_id: int
+
+
+class QuestionSummaryOut(BaseModel):
+    id: int
+    question_text: str
+    location: str
+    created_at: str
+    yes_count: int
+    no_count: int
+
+
+class QuestionListResponse(BaseModel):
+    questions: list[QuestionSummaryOut]
+
+
+class StakeholderResponseOut(BaseModel):
+    id: int
+    question_id: int
+    stakeholder_id: str
+    stakeholder_role: str
+    ai_agent_id: str
+    answer: str
+    confidence: float | None = None
+    reasoning: str | None = None
+    created_at: str
+
+
+class QuestionDetailResponse(BaseModel):
+    question: QuestionSummaryOut
+    responses: list[StakeholderResponseOut]
+
+
+class CreateQuestionOnlyRequest(BaseModel):
+    question: str
+    location: str
+
+
 @router.get("/health")
 def db_health():
-    """Placeholder. Replace with real DB connectivity check later."""
-    return {"status": "ok", "message": "Database router ready; not connected yet."}
+    """
+    Lightweight health check for the Db2 integration.
+
+    This does NOT open a real Db2 connection; it only indicates that the
+    API is wired up. Use a real Db2 monitoring tool or a dedicated route
+    if you need a deeper check.
+    """
+    return {"status": "ok", "message": "Db2 integration ready (connection tested on write)."}
+
+
+@router.post("/questions", response_model=SaveQuestionResponse)
+def save_question(request: SaveQuestionRequest) -> SaveQuestionResponse:
+    """
+    Save a question and all stakeholder AI perspectives to IBM Db2.
+
+    Call this from your question pipeline once you have:
+      - the final location label
+      - the full set of stakeholder AIs and their yes/no answers
+    """
+    try:
+        perspectives = [
+            StakeholderPerspective(
+                stakeholder_id=s.stakeholder_id,
+                stakeholder_role=s.stakeholder_role,
+                ai_agent_id=s.ai_agent_id,
+                answer=s.answer,
+                confidence=s.confidence,
+                reasoning=s.reasoning,
+                location=request.location,
+                raw_payload=s.raw_payload,
+            )
+            for s in request.stakeholders
+        ]
+
+        question_id = save_question_with_perspectives(
+            question=request.question,
+            location=request.location,
+            perspectives=perspectives,
+        )
+    except Exception as exc:  # broad but translated to HTTP error for the API client
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return SaveQuestionResponse(question_id=question_id)
+
+
+@router.post("/questions/basic", response_model=SaveQuestionResponse)
+def create_question_basic(request: CreateQuestionOnlyRequest) -> SaveQuestionResponse:
+    """
+    Create a question row without any stakeholder responses.
+
+    This is useful for frontends that collect questions first, then run
+    stakeholder AI pipelines asynchronously and attach responses later.
+    """
+    try:
+        question_id = create_question_only(
+            question=request.question,
+            location=request.location,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return SaveQuestionResponse(question_id=question_id)
+
+
+@router.get("/questions", response_model=QuestionListResponse)
+def list_questions(limit: int = 50) -> QuestionListResponse:
+    """
+    List recent questions with simple yes/no counts.
+    """
+    try:
+        rows = list_recent_questions(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    questions = [
+        QuestionSummaryOut(
+            id=row.id,
+            question_text=row.question_text,
+            location=row.location,
+            created_at=row.created_at,
+            yes_count=row.yes_count,
+            no_count=row.no_count,
+        )
+        for row in rows
+    ]
+    return QuestionListResponse(questions=questions)
+
+
+@router.get("/questions/{question_id}", response_model=QuestionDetailResponse)
+def get_question(question_id: int) -> QuestionDetailResponse:
+    """
+    Get a single question and all stored stakeholder responses.
+    """
+    try:
+        q_row, resp_rows = get_question_with_responses(question_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    # Compute aggregated counts to reuse QuestionSummaryOut
+    yes_count = sum(1 for r in resp_rows if r.answer.upper() == "YES")
+    no_count = sum(1 for r in resp_rows if r.answer.upper() == "NO")
+
+    question = QuestionSummaryOut(
+        id=q_row.id,
+        question_text=q_row.question_text,
+        location=q_row.location,
+        created_at=q_row.created_at,
+        yes_count=yes_count,
+        no_count=no_count,
+    )
+
+    responses = [
+        StakeholderResponseOut(
+            id=r.id,
+            question_id=r.question_id,
+            stakeholder_id=r.stakeholder_id,
+            stakeholder_role=r.stakeholder_role,
+            ai_agent_id=r.ai_agent_id,
+            answer=r.answer,
+            confidence=r.confidence,
+            reasoning=r.reasoning,
+            created_at=r.created_at,
+        )
+        for r in resp_rows
+    ]
+
+    return QuestionDetailResponse(question=question, responses=responses)
+
+

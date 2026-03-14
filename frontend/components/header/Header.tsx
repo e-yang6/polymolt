@@ -10,9 +10,17 @@ interface Props {
   connectionStatus: ConnectionStatus
   onSelectRegion: (id: string) => void
   onReset: () => void
+  onOpenQuestions: () => void
 }
 
-export function Header({ regions, selectedRegion, connectionStatus, onSelectRegion, onReset }: Props) {
+export function Header({
+  regions,
+  selectedRegion,
+  connectionStatus,
+  onSelectRegion,
+  onReset,
+  onOpenQuestions,
+}: Props) {
   const statusText =
     connectionStatus === "connected" ? "Connected" :
     connectionStatus === "connecting" ? "Connecting…" :
@@ -30,6 +38,13 @@ export function Header({ regions, selectedRegion, connectionStatus, onSelectRegi
           selectedRegion={selectedRegion}
           onSelect={onSelectRegion}
         />
+
+        <button
+          onClick={onOpenQuestions}
+          className="px-3 py-1.5 text-xs text-neutral-500 border border-neutral-200 rounded hover:border-neutral-400 hover:text-neutral-700 transition-colors"
+        >
+          Questions
+        </button>
 
         <button
           onClick={onReset}
