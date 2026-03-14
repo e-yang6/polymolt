@@ -26,6 +26,10 @@ from app.ai.pipeline import run_pipeline
 from app.ai.rag import retrieve, retrieve_chunks
 from app.ai.web_scraper import scrape_web
 
+def _debug_log(msg: str):
+    with open("c:/Users/tteth/Downloads/polymolt/polymolt/backend/debug_orchestrator.txt", "a", encoding="utf-8") as f:
+        f.write(f"{msg}\n")
+
 # Placeholder for the question prompt until a real one is wired in.
 QUESTION_PROMPT_PLACEHOLDER = "[Placeholder: question prompt for the prediction market]"
 from app.agents.config import AGENTS, get_agent, AgentConfig
@@ -38,13 +42,14 @@ logger = logging.getLogger(__name__)
 _BET_SYSTEM = "You are {agent_name}. {system_prompt}"
 
 _BET_USER = """\
-A prediction market asks the following question:
+A prediction market is predicting outcomes and evaluating claims about locations in Toronto (e.g., hospitals, nurseries, attractions) to help mitigate asymmetric information for the public.
+Consider the following question or claim:
 
 \"\"\"{question}\"\"\"
 
 {context_block}
 
-Evaluate this question from your area of expertise.
+Evaluate this location/claim from your area of expertise.
 Respond with ONLY a strict JSON object (no prose before or after):
 {{
   "answer": "YES" or "NO",
@@ -85,10 +90,11 @@ def _run_all_bets(
     context: str,
     model: str | None,
 ) -> list[dict[str, Any]]:
-    return [
-        _run_single_bet(question, agent, context, model)
-        for agent in AGENTS
-    ]
+    bets = []
+    for i, agent in enumerate(AGENTS):
+        _debug_log(f"Phase 1: Agent {i+1}/{len(AGENTS)} betting: {agent.id}")
+        bets.append(_run_single_bet(question, agent, context, model))
+    return bets
 
 
 def _run_single_agent_bet(
@@ -181,12 +187,12 @@ def run_phase1_stream(
 # ── Phase 2: Orchestrator ───────────────────────────────────────────────
 
 _EXPERTISE_SYSTEM = (
-    "You are an orchestrator for a prediction market. "
-    "You have RAG context (retrieved chunks), a question, and specialist agents with system prompts. "
+    "You are an orchestrator for a prediction market focused on evaluating Toronto locations (hospitals, nurseries, attractions). "
+    "You have RAG context (retrieved news/reviews), a question, and specialist agents with system prompts. "
     "Your job: (1) Read the RAG chunks and each agent's specialization (system prompt + description). "
-    "(2) List every agent whose specialization is relevant to the question; for each such agent, "
+    "(2) List every agent whose specialization is relevant to evaluating this location/claim; for each such agent, "
     "select the most relevant part(s) of the RAG and provide that as the context to give that agent. "
-    "Use the specialist agents' bets and web research to inform your choices."
+    "Use the specialist agents' bets and web research to inform your choices to mitigate asymmetric information."
 )
 
 _EXPERTISE_USER = """\
@@ -207,16 +213,22 @@ Available agents — id, name, description, and full system prompt (their specia
 {agent_descriptions_with_prompts}
 
 Tasks:
-1. For each agent whose specialization you consider important for this question, list that agent and assign a related part of the RAG: copy or summarize the most relevant RAG excerpt for that agent into "rag_context_for_agent". Omit agents that are not relevant.
-2. Choose the single best agent for deeper analysis ("assigned_agent_id") and give a short "rationale".
+1. Provide an "overall_topic_reasoning" about what this topic/question is about.
+2. Identify ALL agents whose specialization is important for this question.
+3. For each relevant agent:
+   - Provide a "choice_reasoning" for why this specific agent's expertise is needed.
+   - Assign a "rag_context_for_agent": copy or summarize the most relevant RAG excerpt for that agent.
 
-Respond with ONLY a strict JSON object (no markdown, no prose):
+Respond with ONLY a strict JSON object:
 {{
+  "overall_topic_reasoning": "<explanation>",
   "relevant_agents": [
-    {{ "agent_id": "<id>", "agent_name": "<name>", "rag_context_for_agent": "<excerpt from RAG chunks most relevant to this agent's expertise>" }}
-  ],
-  "assigned_agent_id": "<agent id>",
-  "rationale": "<1-2 sentence explanation>"
+    {{ 
+      "agent_id": "<id>", 
+      "choice_reasoning": "<why this agent>",
+      "rag_context_for_agent": "<relevant RAG excerpt>" 
+    }}
+  ]
 }}
 """
 
@@ -228,10 +240,10 @@ def _identify_expertise_and_assign_rag(
     bets: list[dict[str, Any]],
     web_snippets: list[str],
     model: str | None,
-) -> tuple[str, str, dict[str, str]]:
+) -> tuple[str, list[dict[str, Any]]]:
     """
-    Return (assigned_agent_id, rationale, agent_rag_context_map).
-    agent_rag_context_map: agent_id -> rag_context string for that agent.
+    Return (topic_reasoning, relevant_agents_list).
+    relevant_agents_list: list of dicts with {agent_id, choice_reasoning, rag_context_for_agent}
     """
     agent_summaries = "\n".join(
         f"- {b['agent_name']} ({b['agent_id']}): {b['answer']} "
@@ -255,28 +267,23 @@ def _identify_expertise_and_assign_rag(
         web_snippets=snippets_text,
         agent_descriptions_with_prompts=agent_descriptions_with_prompts,
     )
-    raw = generate(user, system_prompt=_EXPERTISE_SYSTEM, model=model, max_tokens=1500)
+    # Using a larger max_tokens because we're asking for more detail
+    raw = generate(user, system_prompt=_EXPERTISE_SYSTEM, model=model, max_tokens=2000)
 
-    agent_rag_map: dict[str, str] = {}
     try:
         data = json.loads(raw)
-        for item in data.get("relevant_agents") or []:
-            aid = str(item.get("agent_id", ""))
-            if aid and get_agent(aid):
-                agent_rag_map[aid] = str(item.get("rag_context_for_agent", "")).strip()
-        agent_id = str(data.get("assigned_agent_id", ""))
-        rationale = str(data.get("rationale", ""))
+        topic_reasoning = str(data.get("overall_topic_reasoning", ""))
+        relevant_agents = data.get("relevant_agents") or []
+        # Ensure minimal structure
+        if not relevant_agents:
+             # Fallback: if none selected, pick the first one
+             relevant_agents = [{"agent_id": AGENTS[0].id, "choice_reasoning": "Default agent selection.", "rag_context_for_agent": ""}]
     except Exception:
         logger.warning("Expertise identification returned non-JSON: %s", raw)
-        agent_id = AGENTS[0].id
-        rationale = f"Defaulting to {AGENTS[0].name} (failed to parse orchestrator output)."
+        topic_reasoning = "Failed to parse orchestrator topic reasoning."
+        relevant_agents = [{"agent_id": AGENTS[0].id, "choice_reasoning": "Fallback due to parsing error.", "rag_context_for_agent": ""}]
 
-    if not get_agent(agent_id):
-        logger.warning("Orchestrator picked unknown agent '%s'; falling back.", agent_id)
-        agent_id = AGENTS[0].id
-        rationale += f" (original pick was invalid; fell back to {AGENTS[0].name})"
-
-    return agent_id, rationale, agent_rag_map
+    return topic_reasoning, relevant_agents
 
 
 # ── Phase 2d: Deep analysis ─────────────────────────────────────────────
@@ -287,7 +294,7 @@ _DEEP_SYSTEM = (
 )
 
 _DEEP_USER = """\
-A prediction market is evaluating the question:
+A prediction market is evaluating a claim about a Toronto location (e.g., hospital, nursery, attraction) to mitigate asymmetric information:
 
 \"\"\"{question}\"\"\"
 
@@ -305,6 +312,33 @@ of whether the answer is YES or NO, and your overall confidence level.
 """
 
 
+def _parse_agent_analysis(raw_analysis: str) -> tuple[str, int, str]:
+    """Parse the agent's final deep analysis to extract Answer and Confidence."""
+    answer = "UNKNOWN"
+    confidence = 0
+    clean_analysis = raw_analysis.strip()
+    
+    # Try to find "Answer: Yes/No" at the end
+    lines = [line.strip() for line in clean_analysis.split("\n") if line.strip()]
+    if lines:
+        last_line = lines[-1].lower()
+        if "answer: yes" in last_line:
+            answer = "YES"
+        elif "answer: no" in last_line:
+            answer = "NO"
+            
+    # Heuristic for confidence: looking for "confidence: X%" or similar
+    # (Optional: the prompt asks for it, but for now we'll keep it simple or look for numbers)
+    import re
+    conf_match = re.search(r"confidence:\s*(\d+)", clean_analysis.lower())
+    if conf_match:
+        confidence = int(conf_match.group(1))
+    elif answer != "UNKNOWN":
+        confidence = 70  # Default if they gave an answer but no clear confidence
+        
+    return answer, confidence, clean_analysis
+
+
 def _run_deep_analysis(
     question: str,
     agent_id: str,
@@ -312,7 +346,7 @@ def _run_deep_analysis(
     web_snippets: list[str],
     context: str,
     model: str | None,
-) -> str:
+) -> tuple[str, int, str]:
     agent = get_agent(agent_id) or AGENTS[0]
 
     other_bets = "\n".join(
@@ -381,13 +415,14 @@ def run_orchestrated_initial(
     question: str,
     use_rag: bool = True,
     model: str | None = None,
+    where_filter: dict | None = None,
 ) -> dict[str, Any]:
     """
     Phase 1 (legacy): RAG + internal bet prompt per agent + web scrape.
     Use run_phase1 for "same as /run per agent".
     """
     if use_rag:
-        rag_chunks = retrieve_chunks(question, top_k=4)
+        rag_chunks = retrieve_chunks(question, top_k=4, where_filter=where_filter)
         context = "\n\n".join(rag_chunks) if rag_chunks else ""
     else:
         rag_chunks = []
@@ -443,16 +478,16 @@ def run_orchestrated_phase2(
 ) -> dict[str, Any]:
     """
     Phase 2 of the orchestrated pipeline:
-    1. Orchestrator receives RAG (and optional chunks), question, question_prompt (placeholder ok).
-    2. Reads all agent system prompts; lists agents whose specialization is important and assigns each a related part of the RAG as context.
-    3. Picks the best-fit expert agent and runs a deep analysis with that agent's assigned RAG context.
+    1. Orchestrator receives RAG chunks, question, question_prompt.
+    2. Identifies ONE OR MORE relevant agents and assigns specific RAG context.
+    3. Runs each triggered agent and collects their results.
     """
     bets = initial_bets
     web_snippets = web_scrape_snippets
     chunks = rag_chunks if rag_chunks is not None else ([s for s in rag_context.split("\n\n") if s.strip()] if rag_context else [])
     q_prompt = question_prompt or QUESTION_PROMPT_PLACEHOLDER
 
-    assigned_id, rationale, agent_rag_map = _identify_expertise_and_assign_rag(
+    topic_reasoning, relevant_agents_info = _identify_expertise_and_assign_rag(
         question=question,
         question_prompt=q_prompt,
         rag_chunks=chunks,
@@ -460,9 +495,6 @@ def run_orchestrated_phase2(
         web_snippets=web_snippets,
         model=model,
     )
-    assigned_agent = get_agent(assigned_id) or AGENTS[0]
-    # Use orchestrator-assigned RAG context for this agent if available; else full rag_context.
-    agent_specific_rag = agent_rag_map.get(assigned_id) or rag_context
 
     # Relevant agents each make a second bet with their assigned RAG context.
     second_bets: list[dict[str, Any]] = []
@@ -578,6 +610,7 @@ def run_orchestrated_pipeline(
     question: str,
     use_rag: bool = True,
     model: str | None = None,
+    where_filter: dict | None = None,
 ) -> dict[str, Any]:
     """
     Full orchestrated pipeline:
@@ -585,8 +618,10 @@ def run_orchestrated_pipeline(
     2. Orchestrator collects reasons, web-scrapes, identifies expertise,
        assigns the best agent for a deep analysis.
     """
+    _debug_log(f"Starting pipeline for question: {question}")
     # Phase 1 — initial bets + RAG + web scrape
-    phase1 = run_orchestrated_initial(question=question, use_rag=use_rag, model=model)
+    phase1 = run_orchestrated_initial(question=question, use_rag=use_rag, model=model, where_filter=where_filter)
+    _debug_log("Phase 1 complete.")
     context = phase1["rag_context"]
     bets = phase1["initial_bets"]
     web_snippets = phase1["web_scrape_snippets"]

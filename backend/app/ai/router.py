@@ -75,6 +75,7 @@ def phase1(request: Phase1Request):
         question=request.question,
         use_rag=request.use_rag,
         model=request.model,
+        where_filter=request.where_filter,
     )
     return Phase1Response(**result)
 
@@ -177,6 +178,7 @@ def ingest(request: IngestRequest):
         texts=request.texts,
         ids=request.ids,
         collection_name=request.collection_name,
+        metadatas=request.metadatas,
     )
     return IngestResponse(
         count=len(request.texts),

@@ -46,6 +46,7 @@ class Phase1Request(BaseModel):
     question: str
     use_rag: bool = True
     model: str | None = None
+    where_filter: dict | None = None
 
 
 class Phase1Response(BaseModel):
@@ -61,7 +62,27 @@ class AgentRagAssignment(BaseModel):
     rag_context_for_agent: str
 
 
-class Phase2Request(Phase1Response):
+class TriggeredAgent(BaseModel):
+    agent_id: str
+    agent_name: str
+    choice_reasoning: str
+    context: str
+    answer: str
+    confidence: int
+    analysis: str
+
+
+class OrchestratorResponse(OrchestratorPhase1Response):
+    topic_reasoning: str
+    triggered_agents: list[TriggeredAgent] = []
+    # Legacy fields (kept for safety or final summary)
+    assigned_agent_id: str | None = None
+    assigned_agent_name: str | None = None
+    expertise_rationale: str | None = None
+    deep_analysis: str | None = None
+
+
+class OrchestratorPhase2Request(OrchestratorPhase1Response):
     question_prompt: str = "[Placeholder: question prompt for the prediction market]"
     model: str | None = None
 
@@ -81,6 +102,7 @@ class IngestRequest(BaseModel):
     texts: list[str]
     ids: list[str] | None = None
     collection_name: str = "rag"
+    metadatas: list[dict] | None = None
 
 
 class IngestResponse(BaseModel):
