@@ -8,7 +8,7 @@ from pydantic import BaseModel
 class RunRequest(BaseModel):
     message: str
     system_prompt: str | None = None
-    agent_type: str | None = None
+    agent_id: str | None = None
     use_rag: bool = True
     model: str | None = None
 

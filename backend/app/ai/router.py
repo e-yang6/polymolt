@@ -46,7 +46,7 @@ def run(request: RunRequest):
     response = run_pipeline(
         message=request.message,
         system_prompt=request.system_prompt,
-        agent_type=request.agent_type,
+        agent_id=request.agent_id,
         use_rag=request.use_rag,
         model=request.model,
     )
@@ -57,12 +57,12 @@ def run(request: RunRequest):
 def run_chudbot1(request: ChudbotTestRequest):
     """
     Convenience endpoint to test the `chudbot1` agent directly.
-    Uses the same pipeline as /ai/run but forces agent_type="chudbot1".
+    Uses the same pipeline as /ai/run but forces agent_id="chudbot1".
     """
     response = run_pipeline(
         message=request.message,
         system_prompt=None,
-        agent_type="chudbot1",
+        agent_id="chudbot1",
         use_rag=request.use_rag,
         model=request.model,
     )
