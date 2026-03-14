@@ -8,6 +8,7 @@ import { BehaviorStudyView } from "@/components/market/BehaviorStudyView"
 import { TradeFeed } from "@/components/trades/TradeFeed"
 import { AgentGrid } from "@/components/agents/AgentGrid"
 import { AgentDrawer } from "@/components/agents/AgentDrawer"
+import { RegionNews } from "@/components/region/RegionNews"
 import { Region } from "@/types/market"
 
 export default function HomePage() {
@@ -29,9 +30,12 @@ export default function HomePage() {
       />
 
       <main className="flex-1 flex flex-col gap-4 p-4 lg:p-5 max-w-[1400px] mx-auto w-full">
-        {/* Market + trade feed */}
+        {/* Market + trade feed + news for selected region */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
-          <MarketPanel market={market} region={currentRegion} trades={trades} />
+          <div className="flex flex-col gap-4">
+            <MarketPanel market={market} region={currentRegion} trades={trades} />
+            <RegionNews region={currentRegion} />
+          </div>
           <TradeFeed
             trades={trades}
             onAgentClick={(id) => setSelectedAgentId(id)}
