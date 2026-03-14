@@ -5,7 +5,7 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 
-from app.config import CHAT_MODEL, GOOGLE_API_KEY, OPENAI_API_KEY
+from app.config import GOOGLE_API_KEY
 from app.ai.rag import retrieve
 from app.ai.langflow_client import run_websearch_flow
 
@@ -28,49 +28,22 @@ class StakeholderAnalysis:
     reasoning: str
 
 
-def _is_gemini_model(model: str) -> bool:
-    return model.strip().lower().startswith("gemini-")
-
-
-def _choose_model(model_override: Optional[str]) -> str:
-    if model_override:
-        return model_override.strip()
-    return CHAT_MODEL
-
-
 def _call_llm(prompt: str, model: Optional[str] = None, max_tokens: int = 1024) -> str:
-    model_name = _choose_model(model)
-    if _is_gemini_model(model_name):
-        if not GOOGLE_API_KEY:
-            return "Error: GOOGLE_API_KEY required for Gemini models."
-        try:
-            import google.generativeai as genai
+    model_name = (model or "gemini-1.5-pro").strip()
+    if not GOOGLE_API_KEY:
+        return "Error: GOOGLE_API_KEY required for Gemini models."
+    try:
+        from google import genai
 
-            genai.configure(api_key=GOOGLE_API_KEY)
-            gen_model = genai.GenerativeModel(model_name)
-            response = gen_model.generate_content(prompt)
-            if response.text:
-                return response.text.strip()
-            return "Error: No text in Gemini response."
-        except Exception as e:
-            logger.exception("Stakeholder pipeline Gemini call failed")
-            return f"Error: {e!s}"
-    else:
-        if not OPENAI_API_KEY:
-            return "Error: OPENAI_API_KEY required for OpenAI models."
-        try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=OPENAI_API_KEY)
-            r = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-            )
-            return (r.choices[0].message.content or "").strip()
-        except Exception as e:
-            logger.exception("Stakeholder pipeline LLM call failed")
-            return f"Error: {e!s}"
+        genai.Client(api_key=GOOGLE_API_KEY)
+        gen_model = genai.GenerativeModel(model_name)
+        response = gen_model.generate_content(prompt)
+        if response.text:
+            return response.text.strip()
+        return "Error: No text in Gemini response."
+    except Exception as e:
+        logger.exception("Stakeholder pipeline Gemini call failed")
+        return f"Error: {e!s}"
 
 
 def identify_stakeholders(
