@@ -1,6 +1,5 @@
-"""
-Database utilities package.
+"""Database layer — IBM Db2 persistence for questions and stakeholder perspectives."""
 
-Currently provides IBM Db2 connectivity helpers.
-"""
+from app.db.router import router
 
+__all__ = ["router"]

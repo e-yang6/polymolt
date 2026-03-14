@@ -1,6 +1,6 @@
 """
 PolyMolt backend — FastAPI app.
-Routers: /ai (pipeline), /db (database placeholder).
+Routers: /ai (pipeline), /db (database), /market (prediction market).
 """
 
 import logging
@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.ai.router import router as ai_router
 from app.db.router import router as db_router
-from app.market.ws import router as market_router
+from app.market.router import router as market_router
 
 load_dotenv()
 

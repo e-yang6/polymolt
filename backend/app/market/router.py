@@ -32,10 +32,6 @@ router = APIRouter(tags=["market"])
 _shock_queue: dict[str, list[dict[str, Any]]] = {}
 
 
-# ---------------------------------------------------------------------------
-# REST endpoints
-# ---------------------------------------------------------------------------
-
 @router.get("/regions")
 def list_regions():
     return {"regions": [r.to_dict() for r in REGIONS.values()]}
