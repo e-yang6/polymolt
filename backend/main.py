@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.ai.router import router as ai_router
 from app.db.router import router as db_router
+from app.market.ws import router as market_router
 
 load_dotenv()
 
@@ -34,6 +35,7 @@ app.add_middleware(
 
 app.include_router(ai_router)
 app.include_router(db_router)
+app.include_router(market_router)
 
 
 @app.get("/")

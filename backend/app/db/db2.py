@@ -7,11 +7,35 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterable, Literal
 
-import ibm_db
+logger = logging.getLogger(__name__)
+
+# --- IBM DB2 DLL Initialization (Windows) ---
+# ibm_db requires clidriver/bin to be in the DLL search path on Windows.
+if os.name == "nt":
+    import site
+    possible_paths = [
+        os.path.join(site.getusersitepackages(), "clidriver", "bin"),
+        # Hardcoded fallback for the current environment discovered during research
+        r"C:\Users\tteth\AppData\Roaming\Python\Python314\site-packages\clidriver\bin",
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                # Use add_dll_directory for Python 3.8+
+                os.add_dll_directory(path)
+            except Exception:
+                pass
+
+try:
+    import ibm_db
+except ImportError as e:
+    logger.warning(f"Could not load ibm_db driver: {e}. DB2 functionality will be unavailable.")
+    ibm_db = None
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +104,11 @@ def db2_connection():
     """
     if not DB2_DSN:
         raise RuntimeError("DB2_DSN environment variable is not set.")
+    if ibm_db is None:
+        raise RuntimeError(
+            "The 'ibm_db' driver failed to load. On Windows, ensure 'clidriver/bin' "
+            "is in your PATH or installed in site-packages."
+        )
 
     conn = None
     try:
