@@ -10,11 +10,13 @@ import { AgentGrid } from "@/components/agents/AgentGrid"
 import { AgentDrawer } from "@/components/agents/AgentDrawer"
 import { RegionNews } from "@/components/region/RegionNews"
 import { Region } from "@/types/market"
+import { QuestionMenu } from "@/components/questions/QuestionMenu"
 
 export default function HomePage() {
   const { market, agents, trades, regions, selectedRegion, connectionStatus, selectRegion, resetMarket, shockMarket } = useMarket("scandinavia")
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [showStudyView, setShowStudyView] = useState(false)
+  const [showQuestions, setShowQuestions] = useState(false)
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null
   const currentRegion = (regions.find((r) => r.id === selectedRegion) ?? null) as Region | null
@@ -27,6 +29,7 @@ export default function HomePage() {
         connectionStatus={connectionStatus}
         onSelectRegion={selectRegion}
         onReset={resetMarket}
+        onOpenQuestions={() => setShowQuestions(true)}
       />
 
       <main className="flex-1 flex flex-col gap-4 p-4 lg:p-5 max-w-[1400px] mx-auto w-full">
@@ -105,6 +108,12 @@ export default function HomePage() {
           />
         </>
       )}
+
+      {/* Question history & creation drawer */}
+      <QuestionMenu
+        open={showQuestions}
+        onClose={() => setShowQuestions(false)}
+      />
     </div>
   )
 }
