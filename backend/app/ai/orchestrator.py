@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Iterator
 
 from app.models import generate
 from app.ai.pipeline import run_pipeline
@@ -90,6 +91,38 @@ def _run_all_bets(
     ]
 
 
+def _run_single_agent_bet(
+    agent: AgentConfig,
+    question: str,
+    use_rag: bool,
+    model: str | None,
+) -> dict[str, Any]:
+    """Run pipeline for one agent and return bet dict. Used for parallel phase1."""
+    raw = run_pipeline(
+        message=question,
+        agent_id=agent.id,
+        use_rag=use_rag,
+        model=model,
+    )
+    try:
+        data = json.loads(raw)
+        answer = str(data.get("answer", "UNKNOWN")).upper()
+        confidence = int(data.get("confidence", 0))
+        reasoning = str(data.get("reasoning", ""))
+    except Exception:
+        logger.warning("Agent %s pipeline returned non-JSON: %s", agent.id, raw[:200])
+        answer = "UNKNOWN"
+        confidence = 0
+        reasoning = raw
+    return {
+        "agent_id": agent.id,
+        "agent_name": agent.name,
+        "answer": answer,
+        "confidence": confidence,
+        "reasoning": reasoning,
+    }
+
+
 def _run_phase1_via_pipeline(
     question: str,
     use_rag: bool = True,
@@ -101,30 +134,48 @@ def _run_phase1_via_pipeline(
     """
     bets: list[dict[str, Any]] = []
     for agent in AGENTS:
-        raw = run_pipeline(
-            message=question,
-            agent_id=agent.id,
-            use_rag=use_rag,
-            model=model,
-        )
-        try:
-            data = json.loads(raw)
-            answer = str(data.get("answer", "UNKNOWN")).upper()
-            confidence = int(data.get("confidence", 0))
-            reasoning = str(data.get("reasoning", ""))
-        except Exception:
-            logger.warning("Agent %s pipeline returned non-JSON: %s", agent.id, raw[:200])
-            answer = "UNKNOWN"
-            confidence = 0
-            reasoning = raw
-        bets.append({
-            "agent_id": agent.id,
-            "agent_name": agent.name,
-            "answer": answer,
-            "confidence": confidence,
-            "reasoning": reasoning,
-        })
+        bet = _run_single_agent_bet(agent, question, use_rag, model)
+        bets.append(bet)
     return bets
+
+
+def run_phase1_stream(
+    question: str,
+    use_rag: bool = True,
+    model: str | None = None,
+) -> Iterator[dict[str, Any]]:
+    """
+    Phase 1 with SSE: run agents in parallel, yield an event when each agent finishes,
+    then a final phase1_complete event with the full result.
+    Events: {"event": "agent_done", "bet": {...}} and {"event": "phase1_complete", "result": Phase1Response dict}.
+    """
+    if use_rag:
+        rag_chunks = retrieve_chunks(question, top_k=4)
+        rag_context = "\n\n".join(rag_chunks) if rag_chunks else ""
+    else:
+        rag_chunks = []
+        rag_context = ""
+
+    bets: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=len(AGENTS)) as executor:
+        future_to_agent = {
+            executor.submit(_run_single_agent_bet, agent, question, use_rag, model): agent
+            for agent in AGENTS
+        }
+        for future in as_completed(future_to_agent):
+            bet = future.result()
+            bets.append(bet)
+            yield {"event": "agent_done", "bet": bet}
+
+    scrape = scrape_web(question)
+    result = {
+        "question": question,
+        "initial_bets": bets,
+        "web_scrape_snippets": scrape.snippets,
+        "rag_context": rag_context,
+        "rag_chunks": rag_chunks,
+    }
+    yield {"event": "phase1_complete", "result": result}
 
 
 # ── Phase 2: Orchestrator ───────────────────────────────────────────────
@@ -282,6 +333,40 @@ def _run_deep_analysis(
     return generate(user, system_prompt=system, model=agent.model or model, max_tokens=1024)
 
 
+def _run_single_agent_second_bet(
+    agent_id: str,
+    question: str,
+    rag_context_for_agent: str,
+    model: str | None,
+) -> dict[str, Any]:
+    """Run pipeline for one relevant agent with orchestrator-assigned RAG; return bet dict."""
+    agent = get_agent(agent_id) or AGENTS[0]
+    raw = run_pipeline(
+        message=question,
+        agent_id=agent_id,
+        use_rag=False,
+        model=model,
+        additional_context=rag_context_for_agent,
+    )
+    try:
+        data = json.loads(raw)
+        answer = str(data.get("answer", "UNKNOWN")).upper()
+        confidence = int(data.get("confidence", 0))
+        reasoning = str(data.get("reasoning", ""))
+    except Exception:
+        logger.warning("Agent %s second bet returned non-JSON: %s", agent_id, raw[:200])
+        answer = "UNKNOWN"
+        confidence = 0
+        reasoning = raw
+    return {
+        "agent_id": agent.id,
+        "agent_name": agent.name,
+        "answer": answer,
+        "confidence": confidence,
+        "reasoning": reasoning,
+    }
+
+
 # ── Public entry points ─────────────────────────────────────────────────
 
 def run_orchestrated_initial(
@@ -371,6 +456,12 @@ def run_orchestrated_phase2(
     # Use orchestrator-assigned RAG context for this agent if available; else full rag_context.
     agent_specific_rag = agent_rag_map.get(assigned_id) or rag_context
 
+    # Relevant agents each make a second bet with their assigned RAG context.
+    second_bets: list[dict[str, Any]] = []
+    for aid, ctx in agent_rag_map.items():
+        bet = _run_single_agent_second_bet(aid, question, ctx, model)
+        second_bets.append(bet)
+
     analysis = _run_deep_analysis(
         question=question,
         agent_id=assigned_id,
@@ -390,8 +481,89 @@ def run_orchestrated_phase2(
         "assigned_agent_name": assigned_agent.name,
         "expertise_rationale": rationale,
         "relevant_agents_with_rag": relevant_agents,
+        "second_bets": second_bets,
         "deep_analysis": analysis,
     }
+
+
+def run_phase2_stream(
+    question: str,
+    initial_bets: list[dict[str, Any]],
+    web_scrape_snippets: list[str],
+    rag_context: str,
+    rag_chunks: list[str] | None = None,
+    question_prompt: str | None = None,
+    model: str | None = None,
+) -> Iterator[dict[str, Any]]:
+    """
+    Phase 2 with SSE: orchestrator assigns RAG to relevant agents; each makes a second bet (streamed);
+    then assigned agent runs deep analysis; final phase2_complete with full result.
+    Events: orchestrator_done, agent_second_bet_done (per relevant agent), deep_analysis_done, phase2_complete.
+    """
+    web_snippets = web_scrape_snippets
+    chunks = rag_chunks if rag_chunks is not None else ([s for s in rag_context.split("\n\n") if s.strip()] if rag_context else [])
+    q_prompt = question_prompt or QUESTION_PROMPT_PLACEHOLDER
+
+    assigned_id, rationale, agent_rag_map = _identify_expertise_and_assign_rag(
+        question=question,
+        question_prompt=q_prompt,
+        rag_chunks=chunks,
+        bets=initial_bets,
+        web_snippets=web_snippets,
+        model=model,
+    )
+    assigned_agent = get_agent(assigned_id) or AGENTS[0]
+    relevant_agents_with_rag = [
+        {"agent_id": aid, "rag_context_for_agent": ctx}
+        for aid, ctx in agent_rag_map.items()
+    ]
+
+    yield {
+        "event": "orchestrator_done",
+        "assigned_agent_id": assigned_agent.id,
+        "assigned_agent_name": assigned_agent.name,
+        "expertise_rationale": rationale,
+        "relevant_agents_with_rag": relevant_agents_with_rag,
+    }
+
+    second_bets: list[dict[str, Any]] = []
+    if agent_rag_map:
+        with ThreadPoolExecutor(max_workers=len(agent_rag_map)) as executor:
+            future_to_agent = {
+                executor.submit(
+                    _run_single_agent_second_bet,
+                    aid,
+                    question,
+                    ctx,
+                    model,
+                ): aid
+                for aid, ctx in agent_rag_map.items()
+            }
+            for future in as_completed(future_to_agent):
+                bet = future.result()
+                second_bets.append(bet)
+                yield {"event": "agent_second_bet_done", "bet": bet}
+
+    agent_specific_rag = agent_rag_map.get(assigned_id) or rag_context
+    analysis = _run_deep_analysis(
+        question=question,
+        agent_id=assigned_id,
+        bets=initial_bets,
+        web_snippets=web_snippets,
+        context=agent_specific_rag,
+        model=model,
+    )
+    yield {"event": "deep_analysis_done", "deep_analysis": analysis}
+
+    result = {
+        "assigned_agent_id": assigned_agent.id,
+        "assigned_agent_name": assigned_agent.name,
+        "expertise_rationale": rationale,
+        "relevant_agents_with_rag": relevant_agents_with_rag,
+        "second_bets": second_bets,
+        "deep_analysis": analysis,
+    }
+    yield {"event": "phase2_complete", "result": result}
 
 
 def run_orchestrated_pipeline(

@@ -71,6 +71,7 @@ class Phase2Response(Phase1Response):
     assigned_agent_name: str
     expertise_rationale: str
     relevant_agents_with_rag: list[AgentRagAssignment] = []
+    second_bets: list[AgentBet] = []  # relevant agents' second bet after orchestrator assignment
     deep_analysis: str
 
 

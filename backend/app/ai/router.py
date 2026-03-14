@@ -2,10 +2,13 @@
 AI pipeline router — single-agent run + orchestrated prediction pipeline.
 """
 
+import json
+
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 
 from app.ai.pipeline import run_pipeline
-from app.ai.orchestrator import run_phase1, run_orchestrated_phase2
+from app.ai.orchestrator import run_phase1, run_phase1_stream, run_orchestrated_phase2, run_phase2_stream
 from app.ai.rag import add_documents
 from app.ai.schemas import (
     RunRequest,
@@ -76,13 +79,41 @@ def phase1(request: Phase1Request):
     return Phase1Response(**result)
 
 
+def _phase1_sse_generator(request: Phase1Request):
+    """Yield SSE-formatted lines for phase1 stream."""
+    for payload in run_phase1_stream(
+        question=request.question,
+        use_rag=request.use_rag,
+        model=request.model,
+    ):
+        event_type = payload.get("event", "message")
+        data = json.dumps(payload)
+        yield f"event: {event_type}\ndata: {data}\n\n"
+
+
+@router.post("/phase1/stream")
+def phase1_stream(request: Phase1Request):
+    """
+    Phase 1 as Server-Sent Events: agents run in parallel; one event per agent when done,
+    then a final phase1_complete event with the full result.
+    """
+    return StreamingResponse(
+        _phase1_sse_generator(request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post("/phase2", response_model=Phase2Response)
 def phase2(request: Phase2Request):
     """
     Phase 2: Orchestrator reads RAG context and initiates agents with new context.
-    Assigns each relevant agent a part of the RAG, picks the best agent, runs deep analysis with that context.
+    Relevant agents make a second bet; assigned agent runs deep analysis.
     """
-    # Convert AgentBet models to plain dicts for the orchestrator.
     bets = [b.model_dump() for b in request.initial_bets]
 
     phase2_result = run_orchestrated_phase2(
@@ -102,6 +133,40 @@ def phase2(request: Phase2Request):
         rag_context=request.rag_context,
         rag_chunks=request.rag_chunks,
         **phase2_result,
+    )
+
+
+def _phase2_sse_generator(request: Phase2Request):
+    """Yield SSE-formatted lines for phase2 stream."""
+    bets = [b.model_dump() for b in request.initial_bets]
+    for payload in run_phase2_stream(
+        question=request.question,
+        initial_bets=bets,
+        web_scrape_snippets=request.web_scrape_snippets,
+        rag_context=request.rag_context,
+        rag_chunks=request.rag_chunks or None,
+        question_prompt=request.question_prompt or None,
+        model=request.model,
+    ):
+        event_type = payload.get("event", "message")
+        data = json.dumps(payload)
+        yield f"event: {event_type}\ndata: {data}\n\n"
+
+
+@router.post("/phase2/stream")
+def phase2_stream(request: Phase2Request):
+    """
+    Phase 2 as Server-Sent Events: orchestrator_done, then one agent_second_bet_done per
+    relevant agent (parallel), then deep_analysis_done, then phase2_complete with full result.
+    """
+    return StreamingResponse(
+        _phase2_sse_generator(request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
