@@ -5,56 +5,33 @@ Polymolt is a real-time prediction market for regional sustainability. AI agents
 
 ## Tech Stack
 - **Frontend**: Next.js 14 + TypeScript + Tailwind CSS (in `/frontend`)
-- **Backend**: FastAPI + Python (in `/backend`)
-- **Realtime**: WebSockets (FastAPI native)
-- **State**: In-memory for MVP, structured for DB migration
+- **Backend**: FastAPI (in `/backend`). Calling the route runs the **RAG + specialized system-prompt agent** pipeline.
+- **Pipeline**: Implemented in `backend/app/pipeline.py` and `backend/app/rag.py`; flow JSON lives in `backend/langflow_pipeline/` as reference.
 
 ## Directory Structure
 ```
 polymolt/
-  frontend/          # Next.js app
-    src/
-      app/           # App router pages
-      components/    # UI components
-      lib/           # Client utilities, WS hook
-      types/         # TypeScript interfaces
-  backend/
+  backend/               # FastAPI app; POST /run runs the pipeline
     app/
-      agents/        # Agent definitions and behavior
-      market/        # Market maker, probability logic
-      data/          # Seeded regions and evidence
-      rag/           # RAG/retrieval layer interfaces (future)
-      api/           # FastAPI routers
-      core/          # Config, state, orchestrator
+      pipeline.py        # RAG + system prompt + LLM
+      rag.py             # Embeddings + Chroma retrieval
+      config.py
     main.py
-  docs/              # Project specs and task files
+    langflow_pipeline/   # Flow JSON (reference)
+    langflow_components/ # Custom Langflow components (for Langflow UI)
+  frontend/
+  docs/
 ```
-
-## Working Rules
-- Keep files small and modular — no giant files
-- Preserve RAG integration points as TODO stubs
-- The market probability must emerge from agent trades, not a direct formula
-- Leave `# TODO: RAG` and `# TODO: Langflow` comments at integration points
 
 ## Commands
 ```bash
-# Backend (use python -m to ensure correct Python version)
-cd backend && python -m pip install -r requirements.txt && python -m uvicorn main:app --reload --port 8000
+# Backend (run the pipeline via POST /run)
+cd backend && pip install -r requirements.txt && export OPENAI_API_KEY=... && python -m uvicorn main:app --reload --port 8000
 
 # Frontend
 cd frontend && npm install && npm run dev
 ```
 
-## Key Design Decisions
-- LMSR-inspired market maker for probability updates
-- 9 agents with asymmetric knowledge and behavior traits
-- 6 sustainability categories with seeded evidence
-- WebSocket broadcast after each trade
-- Agent knowledge access controls which evidence they can read
-
-## Phase Status
-- [x] Phase 1: Scaffold + MVP — COMPLETE
-- [x] Phase 2: Market Realism — COMPLETE
-- [x] Phase 3: RAG/Langflow Architecture — COMPLETE
-- [x] Phase 4: UI Polish — COMPLETE
-- [x] Phase 5: Demo Readiness — COMPLETE
+## Key Design
+- **POST /run** with body `{ "message": "...", "system_prompt": "..." (optional), "use_rag": true }` runs the pipeline and returns `{ "response": "..." }`.
+- Pipeline: optional RAG retrieval (embed query → Chroma) → prompt (system + context + message) → OpenAI → response.

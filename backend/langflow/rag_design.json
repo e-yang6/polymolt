@@ -1,0 +1,146 @@
+{
+  "name": "RAG Specialized Agents",
+  "description": "Pipeline with RAG retrieval and specialized system-prompt agents. Edit system prompts per agent type.",
+  "data": {
+    "nodes": [
+      {
+        "id": "ChatInput-001",
+        "type": "genericNode",
+        "data": {
+          "id": "ChatInput-001",
+          "type": "ChatInput",
+          "node": {
+            "display_name": "Chat Input",
+            "description": "User message",
+            "template": {
+              "input_value": { "value": "", "display_name": "Message" },
+              "sender_name": { "value": "User", "display_name": "Sender" }
+            }
+          }
+        }
+      },
+      {
+        "id": "OpenAIEmbeddings-001",
+        "type": "genericNode",
+        "data": {
+          "id": "OpenAIEmbeddings-001",
+          "type": "OpenAIEmbeddings",
+          "node": {
+            "display_name": "OpenAI Embeddings",
+            "description": "Embed query for RAG retrieval",
+            "template": {
+              "openai_api_key": { "display_name": "OpenAI API Key", "password": true }
+            }
+          }
+        }
+      },
+      {
+        "id": "VectorStore-001",
+        "type": "genericNode",
+        "data": {
+          "id": "VectorStore-001",
+          "type": "ChromaDB",
+          "node": {
+            "display_name": "Chroma DB",
+            "description": "Vector store for RAG retrieval",
+            "template": {}
+          }
+        }
+      },
+      {
+        "id": "Prompt-001",
+        "type": "genericNode",
+        "data": {
+          "id": "Prompt-001",
+          "type": "Prompt",
+          "node": {
+            "display_name": "Agent Prompt",
+            "description": "System prompt + RAG context + user message",
+            "template": {
+              "template": {
+                "value": "You are a specialized analyst. Use only the context below.\n\nContext:\n{{context}}\n\nUser: {{message}}",
+                "display_name": "Prompt"
+              },
+              "system_prompt": {
+                "value": "You are a climate and sustainability analyst. Answer only using the provided context. Be concise.",
+                "display_name": "System Prompt"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "OpenAIModel-001",
+        "type": "genericNode",
+        "data": {
+          "id": "OpenAIModel-001",
+          "type": "OpenAIModel",
+          "node": {
+            "display_name": "OpenAI",
+            "description": "LLM",
+            "template": {
+              "openai_api_key": { "display_name": "OpenAI API Key", "password": true },
+              "model_name": { "value": "gpt-4o-mini", "display_name": "Model" }
+            }
+          }
+        }
+      },
+      {
+        "id": "ChatOutput-001",
+        "type": "genericNode",
+        "data": {
+          "id": "ChatOutput-001",
+          "type": "ChatOutput",
+          "node": {
+            "display_name": "Chat Output",
+            "description": "Response to user"
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "source": "ChatInput-001",
+        "target": "OpenAIEmbeddings-001",
+        "sourceHandle": "Message",
+        "targetHandle": "input_value"
+      },
+      {
+        "id": "e2",
+        "source": "OpenAIEmbeddings-001",
+        "target": "VectorStore-001",
+        "sourceHandle": "output",
+        "targetHandle": "query_embedding"
+      },
+      {
+        "id": "e3",
+        "source": "VectorStore-001",
+        "target": "Prompt-001",
+        "sourceHandle": "documents",
+        "targetHandle": "context"
+      },
+      {
+        "id": "e4",
+        "source": "ChatInput-001",
+        "target": "Prompt-001",
+        "sourceHandle": "Message",
+        "targetHandle": "message"
+      },
+      {
+        "id": "e5",
+        "source": "Prompt-001",
+        "target": "OpenAIModel-001",
+        "sourceHandle": "output",
+        "targetHandle": "input_value"
+      },
+      {
+        "id": "e6",
+        "source": "OpenAIModel-001",
+        "target": "ChatOutput-001",
+        "sourceHandle": "output",
+        "targetHandle": "input_value"
+      }
+    ]
+  }
+}

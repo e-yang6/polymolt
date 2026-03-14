@@ -21,27 +21,33 @@ It's also a study in LLM-like behavior under asymmetric information: how do agen
 
 ## Architecture
 
+**Backend** = FastAPI. When you hit the route, the **pipeline runs** (RAG + specialized system-prompt agent):
+
 ```
-Browser ←→ Next.js Frontend
-              ↕ WebSocket / REST
-           FastAPI Backend
-              ├── Agent Engine (9 agents, asymmetric knowledge)
-              ├── Market Maker (LMSR-inspired)
-              ├── Evidence Store (seeded, RAG-ready)
-              └── Orchestrator (trade loop, broadcast)
+Browser / Client  ←→  FastAPI Backend (port 8000)
+                          POST /run  →  pipeline runs
+                              ├── RAG (embed → Chroma → context)
+                              ├── Prompt (system_prompt + context + message)
+                              └── OpenAI → response
 ```
+
+- **RAG**: Query → OpenAI embeddings → Chroma retrieval → context string.
+- **Specialized agents**: Pass `system_prompt` in the request body (e.g. "You are a climate analyst. Use only the context.").
+
+Pipeline and flow reference live in `backend/`. See `backend/README.md` for details.
 
 ## Quick Start
 
-**Prerequisites**: Python 3.11+, Node 18+
+**Prerequisites**: Node 18+, Python 3.11+, and an OpenAI API key.
 
 ```bash
 # 1. Clone and enter
 cd polymolt
 
-# 2. Backend
+# 2. Backend (pipeline runs when you call POST /run)
 cd backend
 python -m pip install -r requirements.txt
+export OPENAI_API_KEY=your_key_here
 python -m uvicorn main:app --reload --port 8000
 
 # 3. Frontend (new terminal)
@@ -49,7 +55,10 @@ cd frontend
 npm install
 npm run dev
 
-# 4. Open http://localhost:3000
+# 4. Trigger the pipeline
+curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d '{"message": "What are the main climate risks for Scandinavia?"}'
+
+# 5. Open http://localhost:3000
 ```
 
 ## Sustainability Categories

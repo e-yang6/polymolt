@@ -1,20 +1,21 @@
 """
-Polymolt — FastAPI application entry point.
+PolyMolt backend — FastAPI app.
+Routers: /ai (pipeline), /db (database placeholder).
 """
 
 import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.regions import router as regions_router
-from app.api.market import router as market_router
-from app.api.ws import router as ws_router
+from app.routers import ai_router, db_router
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Polymolt",
-    description="Real-time prediction market for regional sustainability",
+    title="PolyMolt API",
+    description="Backend for the PolyMolt app",
     version="0.1.0",
 )
 
@@ -26,18 +27,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(regions_router)
-app.include_router(market_router)
-app.include_router(ws_router)
+app.include_router(ai_router)
+app.include_router(db_router)
 
 
 @app.get("/")
 def root():
-    return {
-        "name": "Polymolt API",
-        "version": "0.1.0",
-        "docs": "/docs",
-    }
+    return {"name": "PolyMolt API", "version": "0.1.0", "docs": "/docs"}
 
 
 @app.get("/health")
