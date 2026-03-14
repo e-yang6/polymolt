@@ -36,13 +36,14 @@ logger = logging.getLogger(__name__)
 _BET_SYSTEM = "You are {agent_name}. {system_prompt}"
 
 _BET_USER = """\
-A prediction market asks the following question:
+A prediction market is predicting outcomes and evaluating claims about locations in Toronto (e.g., hospitals, nurseries, attractions) to help mitigate asymmetric information for the public.
+Consider the following question or claim:
 
 \"\"\"{question}\"\"\"
 
 {context_block}
 
-Evaluate this question from your area of expertise.
+Evaluate this location/claim from your area of expertise.
 Respond with ONLY a strict JSON object (no prose before or after):
 {{
   "answer": "YES" or "NO",
@@ -92,12 +93,12 @@ def _run_all_bets(
 # ── Phase 2: Orchestrator ───────────────────────────────────────────────
 
 _EXPERTISE_SYSTEM = (
-    "You are an orchestrator for a prediction market. "
-    "You have RAG context (retrieved chunks), a question, and specialist agents with system prompts. "
+    "You are an orchestrator for a prediction market focused on evaluating Toronto locations (hospitals, nurseries, attractions). "
+    "You have RAG context (retrieved news/reviews), a question, and specialist agents with system prompts. "
     "Your job: (1) Read the RAG chunks and each agent's specialization (system prompt + description). "
-    "(2) List every agent whose specialization is relevant to the question; for each such agent, "
+    "(2) List every agent whose specialization is relevant to evaluating this location/claim; for each such agent, "
     "select the most relevant part(s) of the RAG and provide that as the context to give that agent. "
-    "Use the specialist agents' bets and web research to inform your choices."
+    "Use the specialist agents' bets and web research to inform your choices to mitigate asymmetric information."
 )
 
 _EXPERTISE_USER = """\
@@ -198,7 +199,7 @@ _DEEP_SYSTEM = (
 )
 
 _DEEP_USER = """\
-A prediction market is evaluating the question:
+A prediction market is evaluating a claim about a Toronto location (e.g., hospital, nursery, attraction) to mitigate asymmetric information:
 
 \"\"\"{question}\"\"\"
 

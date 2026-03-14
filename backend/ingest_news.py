@@ -4,33 +4,33 @@ import json
 # Configuration
 API_URL = "http://localhost:8000/ai/ingest"
 
-# Sample dummy news articles, tagged by year
+# Sample dummy news and reports about Toronto locations
 NEWS_SAMPLES = [
     {
         "texts": [
-            "In a surprising turn of events, a major study reveals that increased global temperatures by 1.1 degrees have led to a 15% increase in crop yields in northern regions, contradicting previous models.",
-            "Scientists warn that the 1.1 degree increase is causing unprecedented melting of the Greenland ice sheet, threatening coastal cities worldwide.",
-            "A new economic report suggests that transitioning to renewable energy in the current climate could cost trillions more than initially estimated by the IPCC."
+            "Toronto General Hospital announces a major funding boost intended to reduce ER wait times below the 2-hour mark by the end of the year.",
+            "Recent patient surveys indicate a 15% drop in satisfaction at downtown Toronto hospitals due to staffing shortages during peak hours.",
+            "A new initiative at SickKids aims to expand its specialized nursery ward, increasing capacity by 50 beds."
         ],
-        "ids": ["news_1_positive", "news_2_negative", "news_3_economic"],
+        "ids": ["news_1_tgh_funding", "news_2_downtown_er", "news_3_sickkids_nursery"],
         "metadatas": [
-            {"year": 2023, "source": "Global News Network"},
-            {"year": 2023, "source": "Climate Science Daily"},
-            {"year": 2023, "source": "Financial Times Review"}
+            {"year": 2024, "location_type": "hospital", "target": "toronto_general"},
+            {"year": 2024, "location_type": "hospital", "target": "downtown_network"},
+            {"year": 2023, "location_type": "nursery", "target": "sickkids"}
         ],
         "collection_name": "news"
     },
     {
         "texts": [
-            "Unexpected breakthrough! Carbon capture technology becomes commercially viable, promising to reduce global emissions by 20% over the next decade.",
-            "Extreme weather events tied to the 1.1 degree anomaly have caused record-breaking insurance claims this quarter.",
-            "Local healthcare centers are reporting a surge in heat-related illnesses due to prolonged summer heatwaves."
+            "High Park officials predict record attendance for the cherry blossom festival this spring, citing favorable weather forecasts.",
+            "St. Lawrence Market vendors express concern over proposed construction that may limit weekend visitor access for the next 6 months.",
+            "The Royal Ontario Museum (ROM) reports a 20% increase in annual memberships following the successful launch of their new interactive dinosaur exhibit."
         ],
-        "ids": ["news_4_tech", "news_5_insurance", "news_6_health"],
+        "ids": ["news_4_highpark", "news_5_stlawrence", "news_6_rom_exhibit"],
         "metadatas": [
-            {"year": 2024, "source": "Tech Innovators Journal"},
-            {"year": 2024, "source": "Insurance Weekly"},
-            {"year": 2024, "source": "City Health Bulletins"}
+            {"year": 2024, "location_type": "attraction", "target": "high_park"},
+            {"year": 2024, "location_type": "attraction", "target": "st_lawrence_market"},
+            {"year": 2023, "location_type": "attraction", "target": "rom"}
         ],
         "collection_name": "news"
     }
