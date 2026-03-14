@@ -107,9 +107,9 @@ def orchestrate_phase1(request: OrchestratorRequest):
 def orchestrate_phase2(request: OrchestratorPhase2Request):
     """
     Phase 2 of the orchestrated pipeline:
-    1. Read initial bets + web scrape + RAG context.
-    2. Pick the best-suited agent.
-    3. Run a deep analysis with that agent.
+    1. Read RAG (and chunks), question, question_prompt (placeholder ok), initial bets + web scrape.
+    2. Orchestrator lists agents whose specialization is important and assigns each a related part of the RAG.
+    3. Picks the best-suited agent and runs a deep analysis with that agent's RAG context.
     """
     # Convert AgentBet models to plain dicts for the orchestrator.
     bets = [b.model_dump() for b in request.initial_bets]
@@ -119,6 +119,8 @@ def orchestrate_phase2(request: OrchestratorPhase2Request):
         initial_bets=bets,
         web_scrape_snippets=request.web_scrape_snippets,
         rag_context=request.rag_context,
+        rag_chunks=request.rag_chunks or None,
+        question_prompt=request.question_prompt or None,
         model=request.model,
     )
 
@@ -127,6 +129,7 @@ def orchestrate_phase2(request: OrchestratorPhase2Request):
         initial_bets=request.initial_bets,
         web_scrape_snippets=request.web_scrape_snippets,
         rag_context=request.rag_context,
+        rag_chunks=request.rag_chunks,
         **phase2,
     )
 

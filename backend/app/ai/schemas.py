@@ -39,16 +39,24 @@ class OrchestratorPhase1Response(BaseModel):
     initial_bets: list[AgentBet]
     web_scrape_snippets: list[str]
     rag_context: str
+    rag_chunks: list[str] = []
+
+
+class RelevantAgentWithRag(BaseModel):
+    agent_id: str
+    rag_context_for_agent: str
 
 
 class OrchestratorResponse(OrchestratorPhase1Response):
     assigned_agent_id: str
     assigned_agent_name: str
     expertise_rationale: str
+    relevant_agents_with_rag: list[RelevantAgentWithRag] = []
     deep_analysis: str
 
 
 class OrchestratorPhase2Request(OrchestratorPhase1Response):
+    question_prompt: str = "[Placeholder: question prompt for the prediction market]"
     model: str | None = None
 
 
