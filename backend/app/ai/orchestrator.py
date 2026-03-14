@@ -21,6 +21,7 @@ import logging
 from typing import Any
 
 from app.models import generate
+from app.ai.pipeline import run_pipeline
 from app.ai.rag import retrieve, retrieve_chunks
 from app.ai.web_scraper import scrape_web
 
@@ -87,6 +88,43 @@ def _run_all_bets(
         _run_single_bet(question, agent, context, model)
         for agent in AGENTS
     ]
+
+
+def _run_phase1_via_pipeline(
+    question: str,
+    use_rag: bool = True,
+    model: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Phase 1 using /run pipeline: run run_pipeline for each agent (same as POST /run per agent).
+    Returns list of bets; each response is parsed as JSON if possible, else reasoning=response.
+    """
+    bets: list[dict[str, Any]] = []
+    for agent in AGENTS:
+        raw = run_pipeline(
+            message=question,
+            agent_id=agent.id,
+            use_rag=use_rag,
+            model=model,
+        )
+        try:
+            data = json.loads(raw)
+            answer = str(data.get("answer", "UNKNOWN")).upper()
+            confidence = int(data.get("confidence", 0))
+            reasoning = str(data.get("reasoning", ""))
+        except Exception:
+            logger.warning("Agent %s pipeline returned non-JSON: %s", agent.id, raw[:200])
+            answer = "UNKNOWN"
+            confidence = 0
+            reasoning = raw
+        bets.append({
+            "agent_id": agent.id,
+            "agent_name": agent.name,
+            "answer": answer,
+            "confidence": confidence,
+            "reasoning": reasoning,
+        })
+    return bets
 
 
 # ── Phase 2: Orchestrator ───────────────────────────────────────────────
@@ -252,10 +290,8 @@ def run_orchestrated_initial(
     model: str | None = None,
 ) -> dict[str, Any]:
     """
-    Phase 1 of the orchestrated pipeline:
-    1. Optional RAG retrieval (shared context).
-    2. All agents place an initial bet.
-    3. Web scraping for additional non-AI context.
+    Phase 1 (legacy): RAG + internal bet prompt per agent + web scrape.
+    Use run_phase1 for "same as /run per agent".
     """
     if use_rag:
         rag_chunks = retrieve_chunks(question, top_k=4)
@@ -271,6 +307,34 @@ def run_orchestrated_initial(
         "initial_bets": bets,
         "web_scrape_snippets": scrape.snippets,
         "rag_context": context,
+        "rag_chunks": rag_chunks,
+    }
+
+
+def run_phase1(
+    question: str,
+    use_rag: bool = True,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """
+    Phase 1: Same as /run but runs every agent with /run.
+    1. Optional RAG retrieval (shared rag_context/rag_chunks for phase 2).
+    2. For each agent, run the same pipeline as POST /run; collect responses as initial_bets.
+    3. Web scraping for additional non-AI context.
+    """
+    if use_rag:
+        rag_chunks = retrieve_chunks(question, top_k=4)
+        rag_context = "\n\n".join(rag_chunks) if rag_chunks else ""
+    else:
+        rag_chunks = []
+        rag_context = ""
+    bets = _run_phase1_via_pipeline(question, use_rag=use_rag, model=model)
+    scrape = scrape_web(question)
+    return {
+        "question": question,
+        "initial_bets": bets,
+        "web_scrape_snippets": scrape.snippets,
+        "rag_context": rag_context,
         "rag_chunks": rag_chunks,
     }
 

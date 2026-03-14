@@ -5,17 +5,17 @@ AI pipeline router — single-agent run + orchestrated prediction pipeline.
 from fastapi import APIRouter
 
 from app.ai.pipeline import run_pipeline
-from app.ai.orchestrator import run_orchestrated_initial, run_orchestrated_phase2
+from app.ai.orchestrator import run_phase1, run_orchestrated_phase2
 from app.ai.rag import add_documents
 from app.ai.schemas import (
     RunRequest,
     RunResponse,
     ContextRunRequest,
     ContextRunResponse,
-    OrchestratorRequest,
-    OrchestratorPhase1Response,
-    OrchestratorPhase2Request,
-    OrchestratorPhase2Response,
+    Phase1Request,
+    Phase1Response,
+    Phase2Request,
+    Phase2Response,
     IngestRequest,
     IngestResponse,
 )
@@ -62,34 +62,30 @@ def contextrun(request: ContextRunRequest):
     return ContextRunResponse(response=response)
 
 
-@router.post("/orchestrate/phase1", response_model=OrchestratorPhase1Response)
-def orchestrate_phase1(request: OrchestratorRequest):
+@router.post("/phase1", response_model=Phase1Response)
+def phase1(request: Phase1Request):
     """
-    Phase 1 of the orchestrated pipeline:
-    1. Optional RAG retrieval (shared context).
-    2. All agents place an initial bet.
-    3. Web scraping for additional non-AI context.
+    Phase 1: Same as /run but runs every agent with /run.
+    Optional RAG, then run_pipeline per agent; web scrape. Returns initial_bets + rag_context for phase2.
     """
-    result = run_orchestrated_initial(
+    result = run_phase1(
         question=request.question,
         use_rag=request.use_rag,
         model=request.model,
     )
-    return OrchestratorPhase1Response(**result)
+    return Phase1Response(**result)
 
 
-@router.post("/orchestrate/phase2", response_model=OrchestratorPhase2Response)
-def orchestrate_phase2(request: OrchestratorPhase2Request):
+@router.post("/phase2", response_model=Phase2Response)
+def phase2(request: Phase2Request):
     """
-    Phase 2 of the orchestrated pipeline:
-    1. Read RAG (and chunks), question, question_prompt (placeholder ok), initial bets + web scrape.
-    2. Orchestrator lists agents whose specialization is important and assigns each a related part of the RAG.
-    3. Picks the best-suited agent and runs a deep analysis with that agent's RAG context.
+    Phase 2: Orchestrator reads RAG context and initiates agents with new context.
+    Assigns each relevant agent a part of the RAG, picks the best agent, runs deep analysis with that context.
     """
     # Convert AgentBet models to plain dicts for the orchestrator.
     bets = [b.model_dump() for b in request.initial_bets]
 
-    phase2 = run_orchestrated_phase2(
+    phase2_result = run_orchestrated_phase2(
         question=request.question,
         initial_bets=bets,
         web_scrape_snippets=request.web_scrape_snippets,
@@ -99,13 +95,13 @@ def orchestrate_phase2(request: OrchestratorPhase2Request):
         model=request.model,
     )
 
-    return OrchestratorPhase2Response(
+    return Phase2Response(
         question=request.question,
         initial_bets=request.initial_bets,
         web_scrape_snippets=request.web_scrape_snippets,
         rag_context=request.rag_context,
         rag_chunks=request.rag_chunks,
-        **phase2,
+        **phase2_result,
     )
 
 

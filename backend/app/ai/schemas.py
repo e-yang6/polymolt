@@ -31,7 +31,7 @@ class ContextRunResponse(BaseModel):
     response: str
 
 
-# ── Orchestrated pipeline ──
+# ── Phase 1 / Phase 2 (orchestrated pipeline) ──
 
 
 class AgentBet(BaseModel):
@@ -42,13 +42,13 @@ class AgentBet(BaseModel):
     reasoning: str
 
 
-class OrchestratorRequest(BaseModel):
+class Phase1Request(BaseModel):
     question: str
     use_rag: bool = True
     model: str | None = None
 
 
-class OrchestratorPhase1Response(BaseModel):
+class Phase1Response(BaseModel):
     question: str
     initial_bets: list[AgentBet]
     web_scrape_snippets: list[str]
@@ -56,26 +56,22 @@ class OrchestratorPhase1Response(BaseModel):
     rag_chunks: list[str] = []
 
 
-class RelevantAgentWithRag(BaseModel):
+class AgentRagAssignment(BaseModel):
     agent_id: str
     rag_context_for_agent: str
 
 
-class OrchestratorResponse(OrchestratorPhase1Response):
-    assigned_agent_id: str
-    assigned_agent_name: str
-    expertise_rationale: str
-    relevant_agents_with_rag: list[RelevantAgentWithRag] = []
-    deep_analysis: str
-
-
-class OrchestratorPhase2Request(OrchestratorPhase1Response):
+class Phase2Request(Phase1Response):
     question_prompt: str = "[Placeholder: question prompt for the prediction market]"
     model: str | None = None
 
 
-class OrchestratorPhase2Response(OrchestratorResponse):
-    pass
+class Phase2Response(Phase1Response):
+    assigned_agent_id: str
+    assigned_agent_name: str
+    expertise_rationale: str
+    relevant_agents_with_rag: list[AgentRagAssignment] = []
+    deep_analysis: str
 
 
 # ── RAG Ingestion ──
