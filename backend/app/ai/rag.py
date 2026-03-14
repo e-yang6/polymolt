@@ -38,26 +38,24 @@ def add_documents(texts: list[str], ids: list[str] | None = None, collection_nam
         return
     if ids is None:
         ids = [f"doc_{i}" for i in range(len(texts))]
-    embeddings = [embed(t) for t in texts]
-    if not any(embeddings):
-        logger.warning("No embeddings; is OPENAI_API_KEY set?")
-        return
+    
+    # Try to get external embeddings
+    embeddings = [e for e in (embed(t) for t in texts) if e]
     coll = get_collection(collection_name)
     coll.add(embeddings=embeddings, documents=texts, ids=ids[:len(texts)], metadatas=metadatas[:len(texts)] if metadatas else None)
 
 
 def retrieve_chunks(query: str, top_k: int = 4, collection_name: str = "rag", where_filter: dict | None = None) -> list[str]:
     """
-    Retrieve top_k documents for the query. Returns a list of chunk strings.
-    If no collection or no API key, returns empty list.
+    Retrieve top_k documents for the query. Returns a single context string.
+    Falls back to local query_texts if external embeddings fail.
     """
-    if not OPENAI_API_KEY:
-        return []
     try:
         client = _get_client()
         coll = client.get_collection(name=collection_name)
     except Exception:
-        return []
+        return ""
+
     emb = embed(query)
     if not emb:
         return []

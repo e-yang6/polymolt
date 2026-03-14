@@ -46,9 +46,10 @@ def run_pipeline(
     agent_id: str | None = None,
     use_rag: bool = True,
     model: str | None = None,
+    additional_context: str | None = None,
 ) -> str:
     """
-    Run the pipeline: optional RAG retrieval + prompt (system + context + message) → LLM → response.
+    Run the pipeline: optional RAG retrieval + optional additional context + prompt → LLM → response.
     """
     if use_rag and not OPENAI_API_KEY:
         return "Error: OPENAI_API_KEY required for RAG (embeddings)."
@@ -62,4 +63,14 @@ def run_pipeline(
         context_block = ""
 
     user_content = f"{context_block}{message}"
-    return generate(user_content, system_prompt=system, model=chat_model, max_tokens=CHAT_MAX_TOKENS)
+    response = generate(user_content, system_prompt=system, model=chat_model, max_tokens=CHAT_MAX_TOKENS)
+
+    # Make RAG status extremely obvious in the output
+    if use_rag:
+        if context:
+            header = "🟢 [RAG DETECTED - Context found in database]\n" + "="*40 + "\n"
+        else:
+            header = "🔴 [RAG NOT DETECTED - Search returned no results]\n" + "="*40 + "\n"
+        return f"{header}{response}"
+    
+    return response
