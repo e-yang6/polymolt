@@ -78,34 +78,6 @@ class OrchestratorPhase2Response(OrchestratorResponse):
     pass
 
 
-# ── Convenience testing schemas ──
-
-
-class ChudbotTestRequest(BaseModel):
-    message: str
-    use_rag: bool = True
-    model: str | None = None
-
-
-class ChudbotTestResponse(RunResponse):
-    pass
-
-
-# ── RAG retrieval (for testing) ──
-
-class RagRetrieveRequest(BaseModel):
-    query: str
-    top_k: int = 4
-    collection_name: str = "rag"
-
-
-class RagRetrieveResponse(BaseModel):
-    query: str
-    context: str
-    has_context: bool
-    hint: str | None = None  # Set when has_context is false, to help debug
-
-
 # ── RAG Ingestion ──
 
 class IngestRequest(BaseModel):
