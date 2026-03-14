@@ -55,7 +55,7 @@ def add_documents(texts: list[str], ids: list[str] | None = None, collection_nam
         coll.add(documents=texts, ids=ids[:len(texts)])
 
 
-def retrieve(query: str, top_k: int = 4, collection_name: str = "rag") -> str:
+def retrieve_chunks(query: str, top_k: int = 4, collection_name: str = "rag") -> list[str]:
     """
     Retrieve top_k documents for the query. Returns a single context string.
     Falls back to local query_texts if external embeddings fail.
@@ -76,5 +76,14 @@ def retrieve(query: str, top_k: int = 4, collection_name: str = "rag") -> str:
         results = coll.query(query_texts=[query], n_results=min(top_k, 20), include=["documents"])
         
     if not results or not results["documents"] or not results["documents"][0]:
-        return ""
-    return "\n\n".join(results["documents"][0])
+        return []
+    return list(results["documents"][0])
+
+
+def retrieve(query: str, top_k: int = 4, collection_name: str = "rag") -> str:
+    """
+    Retrieve top_k documents for the query. Returns a single context string.
+    If no collection or no API key, returns empty string.
+    """
+    chunks = retrieve_chunks(query, top_k=top_k, collection_name=collection_name)
+    return "\n\n".join(chunks) if chunks else ""
