@@ -1,60 +1,79 @@
 "use client"
 
+import { useState, useEffect, useRef } from "react"
 import { Agent } from "@/types/agent"
-import { AgentTypeBadge } from "@/components/shared/AgentTypeBadge"
-import { CategoryBadge } from "@/components/shared/CategoryBadge"
-import { ArrowUp, ArrowDown, Minus } from "lucide-react"
+import { CATEGORY_LABELS } from "@/lib/constants"
 
 interface Props {
   agent: Agent
   onClick: () => void
 }
 
-function positionIcon(pos: number) {
-  if (pos > 1) return <ArrowUp className="w-3 h-3 text-emerald-400" />
-  if (pos < -1) return <ArrowDown className="w-3 h-3 text-rose-400" />
-  return <Minus className="w-3 h-3 text-slate-500" />
-}
-
 export function AgentCard({ agent, onClick }: Props) {
   const beliefPct = Math.round(agent.currentBelief * 100)
+  const [flash, setFlash] = useState(false)
+  const prevBeliefRef = useRef(agent.currentBelief)
 
-  const beliefColor =
-    beliefPct >= 55 ? "text-emerald-400" :
-    beliefPct <= 40 ? "text-rose-400" :
-    "text-amber-400"
+  useEffect(() => {
+    if (Math.abs(agent.currentBelief - prevBeliefRef.current) > 0.001) {
+      prevBeliefRef.current = agent.currentBelief
+      setFlash(true)
+      const t = setTimeout(() => setFlash(false), 400)
+      return () => clearTimeout(t)
+    }
+  }, [agent.currentBelief])
+
+  const lastTrade = agent.tradeHistory?.[0]
+  const lastDelta = lastTrade
+    ? (lastTrade.priceAfter - lastTrade.priceBefore) * 100
+    : null
+
+  const typeLabel =
+    agent.agentType === "master" ? "Master" :
+    agent.agentType === "hybrid" ? "Hybrid" : "Specialist"
 
   return (
     <button
       onClick={onClick}
-      className="flex flex-col gap-2.5 p-3.5 bg-slate-900 rounded-xl border border-slate-800 hover:border-slate-700 hover:bg-slate-800/60 transition-all text-left cursor-pointer w-full"
+      className={`flex flex-col gap-2 p-3 bg-white border rounded-lg hover:border-neutral-400 transition-colors text-left cursor-pointer w-full ${
+        flash ? "border-neutral-400" : "border-neutral-200"
+      }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-1 min-w-0">
-          <span className="text-sm font-semibold text-slate-200 leading-tight truncate">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <span className="text-sm font-semibold text-neutral-900 leading-tight truncate">
             {agent.name}
           </span>
-          <AgentTypeBadge type={agent.agentType} />
+          <span className="text-xs text-neutral-400">{typeLabel}</span>
         </div>
-        <div className="flex flex-col items-end gap-1 flex-shrink-0">
-          <span className={`text-lg font-bold tabular-nums ${beliefColor}`}>
+        <div className="flex flex-col items-end flex-shrink-0">
+          <span className="text-lg font-bold tabular-nums text-neutral-900">
             {beliefPct}%
           </span>
-          <div className="flex items-center gap-0.5 text-xs text-slate-500">
-            {positionIcon(agent.currentPosition)}
-            <span>{agent.currentPosition.toFixed(1)}</span>
-          </div>
+          {lastTrade && lastDelta !== null ? (
+            <span className={`text-xs font-medium tabular-nums ${
+              (lastTrade.direction === "BUY" || lastTrade.direction === "YES") ? "text-green-600" : "text-red-600"
+            }`}>
+              {lastDelta >= 0 ? "+" : ""}{lastDelta.toFixed(1)}pp
+            </span>
+          ) : (
+            <span className="text-xs text-neutral-400 tabular-nums">
+              {agent.currentPosition >= 0 ? "+" : ""}{agent.currentPosition.toFixed(1)}
+            </span>
+          )}
         </div>
       </div>
 
       <div className="flex flex-wrap gap-1">
         {agent.categories.map((cat) => (
-          <CategoryBadge key={cat} category={cat} size="sm" />
+          <span key={cat} className="text-xs text-neutral-400">
+            {CATEGORY_LABELS[cat] ?? cat}
+          </span>
         ))}
       </div>
 
       {agent.lastReasoning && (
-        <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+        <p className="text-xs text-neutral-400 leading-relaxed line-clamp-2">
           {agent.lastReasoning}
         </p>
       )}

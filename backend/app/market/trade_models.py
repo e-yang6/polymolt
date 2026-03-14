@@ -54,12 +54,26 @@ class MarketState:
         from app.market.lmsr import lmsr_price
         return lmsr_price(self.q_yes, self.q_no, self.b)
 
+    @property
+    def price_momentum(self) -> float:
+        """
+        Recent price trend as a signed float.
+        Positive = rising, negative = falling. Range roughly -0.05 to 0.05.
+        Computed from the last 6 price points (5 deltas).
+        """
+        if len(self.price_history) < 3:
+            return 0.0
+        window = self.price_history[-6:]
+        deltas = [window[i + 1] - window[i] for i in range(len(window) - 1)]
+        return sum(deltas) / len(deltas)
+
     def to_dict(self) -> dict:
         return {
             "regionId": self.region_id,
             "question": self.question,
             "currentPrice": round(self.current_price, 4),
             "priceHistory": [round(p, 4) for p in self.price_history],
+            "priceMomentum": round(self.price_momentum, 5),
             "roundNumber": self.round_number,
             "isRunning": self.is_running,
             "tradeCount": len(self.trade_log),

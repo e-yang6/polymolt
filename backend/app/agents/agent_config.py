@@ -19,12 +19,16 @@ class AgentConfig:
     betting_power: float         # 1.0 specialist, 1.5 hybrid, 2.0 master
 
     # Behavior traits (all 0.0–1.0 unless noted)
-    confidence: float            # how strongly they act on beliefs
+    confidence: float            # baseline confidence — effective_confidence tracks live decay
     risk_tolerance: float        # willingness to take large positions
     stubbornness: float          # resistance to updating on price movement (higher = more resistant)
     herd_sensitivity: float      # tendency to follow market price direction
     update_frequency: float      # probability of trading in any given round (0=never, 1=always)
     contrarian: bool = False     # if True, trades against consensus direction
+
+    # Phase 2 additions
+    max_position: float = 30.0   # position cap — agent won't accumulate beyond this
+    confidence_decay_rate: float = 0.04  # per-round decay if no trade fired
 
 
 # ─── Category constants ────────────────────────────────────────────────────────
@@ -53,6 +57,8 @@ AGENT_CONFIGS: list[AgentConfig] = [
         stubbornness=0.70,
         herd_sensitivity=0.20,
         update_frequency=0.80,
+        max_position=22.0,
+        confidence_decay_rate=0.03,
     ),
     AgentConfig(
         id="energy",
@@ -65,6 +71,8 @@ AGENT_CONFIGS: list[AgentConfig] = [
         stubbornness=0.60,
         herd_sensitivity=0.25,
         update_frequency=0.70,
+        max_position=22.0,
+        confidence_decay_rate=0.03,
     ),
     AgentConfig(
         id="water",
@@ -77,6 +85,8 @@ AGENT_CONFIGS: list[AgentConfig] = [
         stubbornness=0.65,
         herd_sensitivity=0.30,
         update_frequency=0.75,
+        max_position=20.0,
+        confidence_decay_rate=0.04,
     ),
     AgentConfig(
         id="infrastructure",
@@ -89,6 +99,8 @@ AGENT_CONFIGS: list[AgentConfig] = [
         stubbornness=0.50,
         herd_sensitivity=0.35,
         update_frequency=0.65,
+        max_position=22.0,
+        confidence_decay_rate=0.04,
     ),
     AgentConfig(
         id="social",
@@ -101,6 +113,8 @@ AGENT_CONFIGS: list[AgentConfig] = [
         stubbornness=0.40,
         herd_sensitivity=0.50,
         update_frequency=0.60,
+        max_position=20.0,
+        confidence_decay_rate=0.05,
     ),
     AgentConfig(
         id="governance",
@@ -113,6 +127,8 @@ AGENT_CONFIGS: list[AgentConfig] = [
         stubbornness=0.55,
         herd_sensitivity=0.40,
         update_frequency=0.70,
+        max_position=22.0,
+        confidence_decay_rate=0.04,
     ),
 
     # ── Hybrids (1.5x) ──────────────────────────────────────────────────────
@@ -127,6 +143,8 @@ AGENT_CONFIGS: list[AgentConfig] = [
         stubbornness=0.35,
         herd_sensitivity=0.45,
         update_frequency=0.85,
+        max_position=35.0,
+        confidence_decay_rate=0.03,
     ),
     AgentConfig(
         id="human_generalist",
@@ -139,6 +157,8 @@ AGENT_CONFIGS: list[AgentConfig] = [
         stubbornness=0.30,
         herd_sensitivity=0.50,
         update_frequency=0.80,
+        max_position=35.0,
+        confidence_decay_rate=0.03,
     ),
 
     # ── Master Generalist (2.0x) ─────────────────────────────────────────────
@@ -153,6 +173,8 @@ AGENT_CONFIGS: list[AgentConfig] = [
         stubbornness=0.20,
         herd_sensitivity=0.60,
         update_frequency=0.90,
+        max_position=55.0,
+        confidence_decay_rate=0.02,
     ),
 ]
 

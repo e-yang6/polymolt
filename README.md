@@ -10,11 +10,13 @@ It's also a study in LLM-like behavior under asymmetric information: how do agen
 
 ## Features
 
-- **Live market probability chart** — updates after every trade
+- **Live market probability chart** — updates after every trade, tooltip shows agent name + direction
 - **Real-time trade feed** — agent name, direction, size, before/after probability, explanation
-- **9 agent cards** — specialists, hybrids, master generalist
-- **Agent detail panel** — categories, evidence, reasoning, behavior traits, trade history
+- **9 agent cards** — specialists, hybrids, master generalist; flash on belief update, show last trade delta
+- **Agent detail panel** — categories, evidence, reasoning, behavior traits, belief history sparkline
+- **Behavior study view** — toggle panel ranking all 9 agents' beliefs vs. market price
 - **3 seeded demo regions** — Scandinavia (sustainable), Sub-Saharan Drought Belt (weak), Industrial Delta (contested)
+- **Shock events** — inject crisis or recovery scenarios mid-simulation; agents react within 2–3 rounds
 - **WebSocket-driven** — everything updates live in the browser
 
 ## Architecture
@@ -72,6 +74,21 @@ npm run dev
 | Environmental Generalist | Hybrid | 1.5x | Climate, Energy, Water |
 | Human Systems Generalist | Hybrid | 1.5x | Infrastructure, Social, Governance |
 | Master Generalist | Master | 2.0x | All 6 categories |
+
+## Demo API
+
+```bash
+# Inject a crisis event (agents react in ~2–3 rounds)
+curl -X POST http://localhost:8000/market/scandinavia/shock?shock_type=negative
+
+# Inject a recovery event
+curl -X POST http://localhost:8000/market/scandinavia/shock?shock_type=positive
+
+# Reset a specific region
+curl -X POST http://localhost:8000/market/scandinavia/reset
+```
+
+Or use the **Shock** / **Recover** buttons in the UI.
 
 ## Future: RAG + Langflow
 

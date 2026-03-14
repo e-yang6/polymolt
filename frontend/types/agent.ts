@@ -8,7 +8,9 @@ export interface Agent {
   categories: string[]
   bettingPower: number
   confidence: number
+  effectiveConfidence: number
   riskTolerance: number
+  maxPosition: number
   stubbornness: number
   herdSensitivity: number
   updateFrequency: number

@@ -8,6 +8,7 @@ import { TradeEntry } from "@/types/trade"
 const WS_BASE = "ws://localhost:8000"
 const API_BASE = "http://localhost:8000"
 const MAX_TRADES = 150
+const MAX_BELIEF_HISTORY = 50
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error"
 
@@ -20,6 +21,7 @@ interface UseMarketReturn {
   connectionStatus: ConnectionStatus
   selectRegion: (regionId: string) => void
   resetMarket: () => void
+  shockMarket: (type: "negative" | "positive") => Promise<void>
 }
 
 export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
@@ -33,6 +35,7 @@ export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentRegionRef = useRef(defaultRegion)
+  const beliefHistoryRef = useRef<Record<string, number[]>>({})
 
   // Fetch region list once
   useEffect(() => {
@@ -40,6 +43,14 @@ export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
       .then((r) => r.json())
       .then((data) => setRegions(data.regions ?? []))
       .catch(console.error)
+  }, [])
+
+  // Append current belief to per-agent history and return augmented agent
+  const augmentWithHistory = useCallback((agent: Agent): Agent => {
+    const prev = beliefHistoryRef.current[agent.id] ?? []
+    const next = [...prev, agent.currentBelief].slice(-MAX_BELIEF_HISTORY)
+    beliefHistoryRef.current[agent.id] = next
+    return { ...agent, beliefHistory: next }
   }, [])
 
   const connect = useCallback((regionId: string) => {
@@ -83,6 +94,8 @@ export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
     switch (msg.type) {
       case "market_reset": {
         const d = msg.data as { agents?: Agent[]; recentTrades?: TradeEntry[] } & MarketState
+        // Clear belief history on reset
+        beliefHistoryRef.current = {}
         setMarket({
           regionId: d.regionId,
           question: d.question,
@@ -92,7 +105,7 @@ export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
           isRunning: d.isRunning,
           tradeCount: d.tradeCount ?? 0,
         })
-        if (d.agents) setAgents(d.agents)
+        if (d.agents) setAgents(d.agents.map((a) => augmentWithHistory(a)))
         if (d.recentTrades) setTrades(d.recentTrades)
         else setTrades([])
         break
@@ -106,7 +119,7 @@ export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
         })
         setMarket(d.market)
         setAgents((prev) =>
-          prev.map((a) => (a.id === d.agent.id ? d.agent : a))
+          prev.map((a) => (a.id === d.agent.id ? augmentWithHistory(d.agent) : a))
         )
         break
       }
@@ -114,7 +127,7 @@ export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
       case "agent_update": {
         const agent = msg.data as Agent
         setAgents((prev) =>
-          prev.map((a) => (a.id === agent.id ? agent : a))
+          prev.map((a) => (a.id === agent.id ? augmentWithHistory(agent) : a))
         )
         break
       }
@@ -126,7 +139,7 @@ export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
       default:
         break
     }
-  }, [])
+  }, [augmentWithHistory])
 
   // Initial connection
   useEffect(() => {
@@ -157,6 +170,17 @@ export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
     }
   }, [])
 
+  const shockMarket = useCallback(async (type: "negative" | "positive") => {
+    const regionId = currentRegionRef.current
+    try {
+      await fetch(`${API_BASE}/market/${regionId}/shock?shock_type=${type}&rounds=20`, {
+        method: "POST",
+      })
+    } catch (e) {
+      console.error("Shock request failed", e)
+    }
+  }, [])
+
   return {
     market,
     agents,
@@ -166,5 +190,6 @@ export function useMarket(defaultRegion = "scandinavia"): UseMarketReturn {
     connectionStatus,
     selectRegion,
     resetMarket,
+    shockMarket,
   }
 }

@@ -71,3 +71,39 @@ async def reset_market(region_id: str):
 def stop_market(region_id: str):
     stop_simulation(app_state)
     return {"status": "stopped"}
+
+
+@router.post("/{region_id}/shock")
+async def shock_market(region_id: str, shock_type: str = "negative", rounds: int = 20):
+    """
+    Inject a temporary shock event: strong evidence items that agents will
+    pick up over the next `rounds` trading rounds.
+
+    shock_type: "negative" (crisis event) | "positive" (recovery event)
+    rounds: how many market rounds the shock evidence persists (default 20)
+
+    Demo usage:
+        POST /market/scandinavia/shock?shock_type=negative
+        POST /market/scandinavia/shock?shock_type=positive&rounds=25
+    """
+    if not app_state.market or app_state.market.region_id != region_id:
+        raise HTTPException(status_code=404, detail="No active market for this region")
+    if shock_type not in ("negative", "positive"):
+        raise HTTPException(status_code=400, detail="shock_type must be 'negative' or 'positive'")
+
+    app_state.inject_shock(shock_type=shock_type, rounds=rounds)
+    return {
+        "status": "shock_injected",
+        "shock_type": shock_type,
+        "rounds": rounds,
+        "expires_at_round": app_state._shock_expiry_round,
+    }
+
+
+@router.post("/{region_id}/clear_shock")
+async def clear_shock(region_id: str):
+    """Remove any active shock event immediately."""
+    if not app_state.market or app_state.market.region_id != region_id:
+        raise HTTPException(status_code=404, detail="No active market for this region")
+    app_state.clear_shock()
+    return {"status": "shock_cleared"}
