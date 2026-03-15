@@ -11,3 +11,4 @@ ibm_db>=3.2.0
 pandas>=2.2.0
 pyarrow>=15.0.0
 railtracks
+feedparser>=6.0.0
