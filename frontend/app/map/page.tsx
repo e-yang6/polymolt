@@ -4,7 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { TorontoMap, type TorontoMapRef } from "@/components/map/TorontoMap"
 import { LocationSidePanel } from "@/components/map/LocationSidePanel"
-import type { SelectedFeature } from "@/types/map"
+import { BetLocationList } from "@/components/map/BetLocationList"
+import type { SelectedFeature, BetLocation } from "@/types/map"
+import type { QuestionSummary } from "@/types/question"
+import { BACKEND_URL } from "@/lib/config"
 
 const MAPBOX_STREETS = "mapbox://styles/mapbox/streets-v12"
 const MAPBOX_SATELLITE = "mapbox://styles/mapbox/satellite-streets-v12"
@@ -18,6 +21,22 @@ interface SearchResult {
   text?: string
 }
 
+async function geocodeLocation(
+  location: string,
+  token: string
+): Promise<[number, number] | null> {
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${token}&bbox=${TORONTO_BBOX}&limit=1`
+    )
+    const data = await res.json()
+    const coords = data.features?.[0]?.center as [number, number] | undefined
+    return coords ?? null
+  } catch {
+    return null
+  }
+}
+
 export default function MapPage() {
   const [selectedFeature, setSelectedFeature] = useState<SelectedFeature | null>(null)
   const [pulseCoordinates, setPulseCoordinates] = useState<[number, number] | null>(null)
@@ -26,12 +45,72 @@ export default function MapPage() {
   const [isMobile, setIsMobile] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
 
+  const [betLocations, setBetLocations] = useState<BetLocation[]>([])
+  const [betsLoading, setBetsLoading] = useState(true)
+  const [activeBetId, setActiveBetId] = useState<number | null>(null)
+
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 768px)")
     const fn = () => setIsMobile(mq.matches)
     fn()
     mq.addEventListener("change", fn)
     return () => mq.removeEventListener("change", fn)
+  }, [])
+
+  // Fetch questions from DB and geocode their locations
+  useEffect(() => {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+    if (!token) {
+      setBetsLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    async function loadBets() {
+      try {
+        const res = await fetch(`${BACKEND_URL}/db/questions?limit=50`)
+        if (!res.ok) throw new Error("Failed to fetch questions")
+        const data = await res.json()
+        const questions: QuestionSummary[] = data.questions ?? data ?? []
+
+        const withLocation = questions.filter((q) => q.location?.trim())
+
+        // Deduplicate location strings for geocoding
+        const uniqueLocations = [...new Set(withLocation.map((q) => q.location.trim()))]
+        const coordCache = new Map<string, [number, number]>()
+
+        await Promise.all(
+          uniqueLocations.map(async (loc) => {
+            const coords = await geocodeLocation(loc, token!)
+            if (coords) coordCache.set(loc, coords)
+          })
+        )
+
+        if (cancelled) return
+
+        const bets: BetLocation[] = withLocation
+          .filter((q) => coordCache.has(q.location.trim()))
+          .map((q) => ({
+            questionId: q.id,
+            questionText: q.question_text,
+            location: q.location,
+            coordinates: coordCache.get(q.location.trim())!,
+            createdAt: q.created_at,
+            yesCount: q.yes_count,
+            noCount: q.no_count,
+          }))
+
+        setBetLocations(bets)
+      } catch {
+        // Silently fail — bets panel will show "no bets"
+      } finally {
+        if (!cancelled) setBetsLoading(false)
+      }
+    }
+
+    loadBets()
+    return () => { cancelled = true }
   }, [])
 
   const handleFeatureSelect = useCallback((feature: SelectedFeature | null) => {
@@ -49,6 +128,7 @@ export default function MapPage() {
       setSelectedFeature(null)
       setPulseCoordinates(null)
       setPanelOpen(false)
+      setActiveBetId(null)
     }
   }, [])
 
@@ -56,7 +136,34 @@ export default function MapPage() {
     setSelectedFeature(null)
     setPulseCoordinates(null)
     setPanelOpen(false)
+    setActiveBetId(null)
   }, [])
+
+  const handleBetClick = useCallback(
+    (bet: BetLocation) => {
+      const [lng, lat] = bet.coordinates
+      const feature: SelectedFeature = {
+        name: bet.location,
+        type: "bet",
+        coordinates: [lng, lat],
+        layerId: "bet",
+      }
+      setHintDismissed(true)
+      setSelectedFeature(feature)
+      setPulseCoordinates([lng, lat])
+      setPanelOpen(true)
+      setActiveBetId(bet.questionId)
+      mapRef.current?.flyTo(lng, lat, 15)
+    },
+    []
+  )
+
+  const handleBetMarkerClick = useCallback(
+    (bet: BetLocation) => {
+      handleBetClick(bet)
+    },
+    [handleBetClick]
+  )
 
   const [searchQuery, setSearchQuery] = useState("")
   const [searching, setSearching] = useState(false)
@@ -116,6 +223,7 @@ export default function MapPage() {
       setSelectedFeature(feature)
       setPulseCoordinates([lng, lat])
       setPanelOpen(true)
+      setActiveBetId(null)
       mapRef.current?.flyTo(lng, lat, 16)
     },
     []
@@ -133,6 +241,9 @@ export default function MapPage() {
         onError={setMapError}
         animateFromWorld
         onFlyComplete={() => setFlyComplete(true)}
+        betLocations={betLocations}
+        onBetMarkerClick={handleBetMarkerClick}
+        activeBetId={activeBetId}
       />
 
       {/* Top-left controls */}
@@ -194,6 +305,14 @@ export default function MapPage() {
         >
           {mapStyle === MAPBOX_STREETS ? "Satellite" : "Streets"}
         </button>
+
+        {/* Bet locations list */}
+        <BetLocationList
+          bets={betLocations}
+          loading={betsLoading}
+          onBetClick={handleBetClick}
+          activeBetId={activeBetId}
+        />
       </div>
 
       {mapError && (
@@ -223,6 +342,7 @@ export default function MapPage() {
           feature={selectedFeature}
           onClose={handleClosePanel}
           isMobile={isMobile}
+          betLocations={betLocations}
         />
       )}
     </div>

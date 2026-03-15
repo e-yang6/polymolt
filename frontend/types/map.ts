@@ -18,3 +18,13 @@ export interface HistoryItem {
   answer: string
   createdAt: string
 }
+
+export interface BetLocation {
+  questionId: number
+  questionText: string
+  location: string
+  coordinates: [number, number]
+  createdAt: string
+  yesCount: number
+  noCount: number
+}

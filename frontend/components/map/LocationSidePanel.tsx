@@ -1,41 +1,35 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { X } from "lucide-react"
-import type { SelectedFeature } from "@/types/map"
-import type { HistoryItem } from "@/types/map"
-import { getLocationHistory } from "@/lib/locationApi"
+import { ArrowRight, X } from "lucide-react"
+import type { SelectedFeature, BetLocation } from "@/types/map"
 
 interface LocationSidePanelProps {
   feature: SelectedFeature
   onClose: () => void
   isMobile: boolean
+  betLocations?: BetLocation[]
 }
 
-export function LocationSidePanel({ feature, onClose, isMobile }: LocationSidePanelProps) {
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+}
+
+export function LocationSidePanel({ feature, onClose, isMobile, betLocations = [] }: LocationSidePanelProps) {
   const router = useRouter()
-  const [history, setHistory] = useState<HistoryItem[]>([])
-  const [loadingHistory, setLoadingHistory] = useState(true)
   const [input, setInput] = useState("")
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    setHistory([])
-    setError(null)
-    setLoadingHistory(true)
-    getLocationHistory(feature.name)
-      .then(setHistory)
-      .catch(() => setHistory([]))
-      .finally(() => setLoadingHistory(false))
-  }, [feature.name, feature.coordinates?.join(",")])
+  const locationBets = useMemo(() => {
+    const name = feature.name.toLowerCase().trim()
+    return betLocations.filter((b) => b.location.toLowerCase().trim() === name)
+  }, [feature.name, betLocations])
 
   const sendMessage = () => {
     const q = input.trim()
     if (!q) return
-
-    // Navigate to dashboard with question params; orchestration runs there
     const params = new URLSearchParams({
       question: q,
       location: feature.name,
@@ -44,9 +38,18 @@ export function LocationSidePanel({ feature, onClose, isMobile }: LocationSidePa
     onClose()
   }
 
-  const askAgain = (question: string) => {
-    setInput(question)
-    inputRef.current?.focus()
+  const goToBet = (bet: BetLocation) => {
+    const hasVotes = bet.yesCount + bet.noCount > 0
+    if (hasVotes) {
+      router.push(`/dashboard?question_id=${bet.questionId}`)
+    } else {
+      const params = new URLSearchParams({
+        question: bet.questionText,
+        location: bet.location,
+      })
+      router.push(`/dashboard?${params.toString()}`)
+    }
+    onClose()
   }
 
   const [lng, lat] = feature.coordinates
@@ -126,33 +129,48 @@ export function LocationSidePanel({ feature, onClose, isMobile }: LocationSidePa
           </div>
 
           <div>
-            <h3 className="text-sm font-medium text-neutral-700 mb-3">Past questions</h3>
-            {loadingHistory ? (
-              <p className="text-sm text-neutral-500">Loading…</p>
-            ) : history.length === 0 ? (
-              <p className="text-sm text-neutral-500">No previous questions for this location yet.</p>
+            <h3 className="text-sm font-medium text-neutral-700 mb-3">
+              Past bets{locationBets.length > 0 && (
+                <span className="ml-1.5 text-neutral-400 font-normal">({locationBets.length})</span>
+              )}
+            </h3>
+            {locationBets.length === 0 ? (
+              <p className="text-sm text-neutral-500">No bets for this location yet.</p>
             ) : (
-              <ul className="space-y-3">
-                {history.map((item) => (
-                  <li
-                    key={item.id}
-                    className="rounded-xl border border-neutral-200 bg-neutral-50/80 overflow-hidden"
-                  >
-                    <div className="px-3 py-2.5 border-b border-neutral-200/80">
-                      <p className="text-sm font-medium text-neutral-900">{item.question}</p>
-                    </div>
-                    <div className="px-3 py-2.5">
-                      <p className="text-sm text-neutral-600 whitespace-pre-wrap">{item.answer}</p>
+              <ul className="space-y-2.5">
+                {locationBets.map((bet) => {
+                  const total = bet.yesCount + bet.noCount
+                  const yesPct = total > 0 ? Math.round((bet.yesCount / total) * 100) : null
+                  return (
+                    <li key={bet.questionId}>
                       <button
                         type="button"
-                        onClick={() => askAgain(item.question)}
-                        className="mt-2 text-xs font-medium text-neutral-900 hover:underline"
+                        onClick={() => goToBet(bet)}
+                        className="w-full text-left rounded-xl border border-neutral-200 bg-neutral-50/80 p-3 hover:border-neutral-400 hover:shadow-sm transition-all group"
                       >
-                        Ask again
+                        <p className="text-sm font-medium text-neutral-900 line-clamp-2 leading-snug">
+                          {bet.questionText}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2 text-xs text-neutral-500">
+                          <span>{formatDate(bet.createdAt)}</span>
+                          {yesPct != null && (
+                            <>
+                              <span className="text-neutral-300">·</span>
+                              <span className="text-emerald-600 font-medium">Yes {yesPct}%</span>
+                              <span className="text-neutral-300">·</span>
+                              <span>{total} votes</span>
+                            </>
+                          )}
+                          {yesPct == null && <span>No votes yet</span>}
+                        </div>
+                        <div className="mt-2 flex items-center gap-1 text-xs font-medium text-neutral-900 group-hover:text-blue-600 transition-colors">
+                          View bet
+                          <ArrowRight className="w-3 h-3" />
+                        </div>
                       </button>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>
