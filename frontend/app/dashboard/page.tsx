@@ -194,7 +194,12 @@ export default function DashboardPage() {
                       key={q.id}
                       onClick={() => {
                         setHasStarted(true)
-                        orch.start(q.question_text, q.location)
+                        const hasVotes = (q.yes_count + q.no_count) > 0
+                        if (hasVotes) {
+                          orch.loadHistorical(q.id)
+                        } else {
+                          orch.start(q.question_text, q.location)
+                        }
                       }}
                       className="text-left rounded-lg border border-neutral-200 p-4 hover:border-neutral-400 hover:shadow-sm transition-all group"
                     >

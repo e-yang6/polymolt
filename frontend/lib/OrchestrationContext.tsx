@@ -47,6 +47,7 @@ const INITIAL_STATE: OrchestrationState = {
 
 export interface OrchestrationContextValue extends OrchestrationState {
   start: (question: string, location: string) => Promise<void>
+  loadHistorical: (questionId: number) => Promise<void>
   reset: () => void
 }
 
@@ -299,11 +300,117 @@ export function OrchestrationProvider({ children }: { children: ReactNode }) {
     setState(INITIAL_STATE)
   }, [])
 
+  // Load saved question + responses and display as market (no re-simulation)
+  const loadHistorical = useCallback(async (questionId: number) => {
+    abortRef.current?.abort()
+    setState((prev) => ({
+      ...prev,
+      status: "running",
+      phaseLabel: "Loading saved results...",
+    }))
+    try {
+      const res = await fetch(`${BACKEND}/db/questions/${questionId}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const msg = typeof data?.detail === "string" ? data.detail : `Failed to load question (${res.status})`
+        throw new Error(msg)
+      }
+      const question = data.question as { question_text: string; location: string; yes_count: number; no_count: number }
+      const responses = (data.responses ?? []) as Array<{
+        id: number
+        answer: string
+        stakeholder_role: string
+        ai_agent_id: string
+        confidence: number | null
+        reasoning: string | null
+        created_at: string
+      }>
+      const questionText = question?.question_text ?? ""
+      const location = question?.location ?? ""
+
+      if (responses.length === 0) {
+        const total = (question?.yes_count ?? 0) + (question?.no_count ?? 0)
+        const currentPrice = total > 0
+          ? (question!.yes_count / total)
+          : 0.5
+        setState({
+          ...INITIAL_STATE,
+          question: questionText,
+          location,
+          status: "done",
+          phaseLabel: "No individual agent data; showing aggregate.",
+          currentPrice,
+          priceHistory: [0.5, currentPrice],
+          trades: [],
+          tradeCount: total,
+          roundNumber: 1,
+        })
+        return
+      }
+
+      // Sort by created_at so we can build price path in order
+      const sorted = [...responses].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      )
+      let yesCount = 0
+      let noCount = 0
+      const priceHistory: number[] = [0.5]
+      const trades: TradeEntry[] = []
+
+      for (let i = 0; i < sorted.length; i++) {
+        const r = sorted[i]
+        const prevPrice = priceHistory[priceHistory.length - 1]
+        if (String(r.answer).toUpperCase() === "YES") yesCount += 1
+        else noCount += 1
+        const total = yesCount + noCount
+        const priceAfter = total > 0 ? yesCount / total : 0.5
+        priceHistory.push(priceAfter)
+
+        const direction = String(r.answer).toUpperCase() === "YES" ? "YES" : "NO"
+        const size = r.confidence != null ? Math.max(2, r.confidence / 5) : 2
+        trades.push({
+          id: `hist-${r.id}`,
+          timestamp: r.created_at,
+          agentId: r.ai_agent_id,
+          agentName: r.stakeholder_role,
+          agentType: "specialist",
+          direction: direction as "YES" | "NO",
+          size,
+          priceBefore: prevPrice,
+          priceAfter,
+          reasoning: (r.reasoning ?? "").slice(0, 300),
+          evidenceTitles: [],
+        })
+      }
+
+      const currentPrice = priceHistory[priceHistory.length - 1]
+      setState({
+        ...INITIAL_STATE,
+        question: questionText,
+        location,
+        status: "done",
+        phaseLabel: `Loaded ${responses.length} agent response(s) from saved results.`,
+        currentPrice,
+        priceHistory,
+        trades: trades.reverse(),
+        tradeCount: trades.length,
+        roundNumber: 1,
+      })
+    } catch (e) {
+      setState((prev) => ({
+        ...prev,
+        status: "error",
+        error: e instanceof Error ? e.message : "Failed to load saved question",
+        phaseLabel: "Error loading.",
+      }))
+    }
+  }, [])
+
   // NOTE: no abort on unmount — this provider lives at the layout level
   // and should survive page navigations
 
   return (
-    <OrchestrationContext.Provider value={{ ...state, start, reset }}>
+    <OrchestrationContext.Provider value={{ ...state, start, loadHistorical, reset }}>
       {children}
     </OrchestrationContext.Provider>
   )
