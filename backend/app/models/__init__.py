@@ -9,10 +9,10 @@ starts with "gemini", in which case it routes to the Gemini provider.
 
 embed() always uses Gemini — the OpenAI-compatible proxy (HuggingFace
 Inference Endpoints) does not expose an /embeddings route.
+Embedding results are cached in Upstash Redis (deterministic for same input).
 """
 
 from __future__ import annotations
-import logging
 
 import logging
 
@@ -47,10 +47,23 @@ def generate(
 
 
 def embed(text: str, model: str | None = None) -> list[float]:
-    """Return an embedding vector via Gemini."""
+    """Return an embedding vector via Gemini. Results are cached in Redis."""
     from app.config import GOOGLE_API_KEY
 
     if not GOOGLE_API_KEY:
         _log.warning("GOOGLE_API_KEY not set — cannot embed")
         return []
-    return _gemini.embed(text, model=model)
+
+    from app.cache import cache_get, cache_set, NS_EMBEDDING, TTL_EMBEDDING
+
+    cached = cache_get(NS_EMBEDDING, text, model)
+    if cached is not None:
+        _log.debug("embed cache HIT (len=%d)", len(cached))
+        return cached
+
+    result = _gemini.embed(text, model=model)
+
+    if result:
+        cache_set(NS_EMBEDDING, text, model, value=result, ttl=TTL_EMBEDDING)
+
+    return result
