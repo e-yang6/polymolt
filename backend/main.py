@@ -2,9 +2,11 @@
 PolyMolt backend — FastAPI app.
 Routers: /ai (pipeline), /db (database), /market (prediction market).
 Deploys to GCP Cloud Run (reads PORT from env).
+Set API_PREFIX=/api if the app is served behind a proxy under /api.
 """
 
 import logging
+import os
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -20,6 +22,11 @@ from app.market.router import router as market_router
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Optional path prefix when served behind a proxy (e.g. API_PREFIX=/api → /api/market/reset)
+_api_prefix = (os.getenv("API_PREFIX") or "").strip().rstrip("/")
+if _api_prefix and not _api_prefix.startswith("/"):
+    _api_prefix = "/" + _api_prefix
+
 app = FastAPI(
     title="PolyMolt API",
     description="Backend for the PolyMolt app",
@@ -34,9 +41,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(ai_router)
-app.include_router(db_router)
-app.include_router(market_router)
+if _api_prefix:
+    app.include_router(ai_router, prefix=_api_prefix)
+    app.include_router(db_router, prefix=_api_prefix)
+    app.include_router(market_router, prefix=_api_prefix)
+else:
+    app.include_router(ai_router)
+    app.include_router(db_router)
+    app.include_router(market_router)
 
 
 @app.get("/")
