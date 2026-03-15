@@ -464,15 +464,14 @@ def run_orchestrated_phase2(
             "analysis": bet["reasoning"],
         })
 
-    # Legacy / Phase2Response: primary = first triggered agent
-    primary = triggered_agents[0] if triggered_agents else {
-        "agent_id": "none", "agent_name": "None", "choice_reasoning": "None",
-        "context": "", "answer": "NO", "confidence": 0, "analysis": "No agents triggered.",
-    }
-
-    # Phase2Response also expects relevant_agents_with_rag and second_bets
+    # All chosen agents with name and reasoning; no "primary" or "assigned" agent
     relevant_agents_with_rag = [
-        {"agent_id": t["agent_id"], "rag_context_for_agent": t["context"]}
+        {
+            "agent_id": t["agent_id"],
+            "agent_name": t["agent_name"],
+            "expertise_rationale": t["choice_reasoning"],
+            "rag_context_for_agent": t["context"],
+        }
         for t in triggered_agents
     ]
     second_bets = [
@@ -489,9 +488,6 @@ def run_orchestrated_phase2(
     return {
         "topic_reasoning": topic_reasoning,
         "triggered_agents": triggered_agents,
-        "assigned_agent_id": primary["agent_id"],
-        "assigned_agent_name": primary["agent_name"],
-        "expertise_rationale": primary["choice_reasoning"],
         "relevant_agents_with_rag": relevant_agents_with_rag,
         "second_bets": second_bets,
     }
@@ -523,15 +519,14 @@ def run_phase2_stream(
         web_snippets=web_snippets,
         model=model,
     )
-    # Derive single-assigned shape for stream events (first relevant agent)
-    assigned_id = relevant_agents_info[0]["agent_id"] if relevant_agents_info else (AGENTS[0].id if AGENTS else "")
-    rationale = relevant_agents_info[0].get("choice_reasoning", "") if relevant_agents_info else ""
     agent_rag_map = {r["agent_id"]: r.get("rag_context_for_agent", "") for r in relevant_agents_info}
-    assigned_agent = get_agent(assigned_id) or (AGENTS[0] if AGENTS else None)
-    if not assigned_agent:
-        raise ValueError("No agents configured")
     relevant_agents_with_rag = [
-        {"agent_id": r["agent_id"], "rag_context_for_agent": r.get("rag_context_for_agent", "")}
+        {
+            "agent_id": r["agent_id"],
+            "agent_name": (get_agent(r["agent_id"]) or AGENTS[0]).name,
+            "expertise_rationale": r.get("choice_reasoning", ""),
+            "rag_context_for_agent": r.get("rag_context_for_agent", ""),
+        }
         for r in relevant_agents_info
     ]
 
@@ -540,9 +535,6 @@ def run_phase2_stream(
     yield {
         "event": "orchestrator_done",
         "topic_reasoning": topic_reasoning,
-        "assigned_agent_id": assigned_agent.id,
-        "assigned_agent_name": assigned_agent.name,
-        "expertise_rationale": rationale,
         "relevant_agents_with_rag": relevant_agents_with_rag,
     }
 
@@ -565,11 +557,22 @@ def run_phase2_stream(
                 second_bets.append(bet)
                 yield {"event": "agent_second_bet_done", "bet": bet}
 
+    rationale_by_id = {r["agent_id"]: r.get("expertise_rationale", "") for r in relevant_agents_with_rag}
+    triggered_agents = [
+        {
+            "agent_id": b["agent_id"],
+            "agent_name": b["agent_name"],
+            "choice_reasoning": rationale_by_id.get(b["agent_id"], ""),
+            "context": agent_rag_map.get(b["agent_id"], ""),
+            "answer": b["answer"],
+            "confidence": b["confidence"],
+            "analysis": b["reasoning"],
+        }
+        for b in second_bets
+    ]
     result = {
         "topic_reasoning": topic_reasoning,
-        "assigned_agent_id": assigned_agent.id,
-        "assigned_agent_name": assigned_agent.name,
-        "expertise_rationale": rationale,
+        "triggered_agents": triggered_agents,
         "relevant_agents_with_rag": relevant_agents_with_rag,
         "second_bets": second_bets,
     }

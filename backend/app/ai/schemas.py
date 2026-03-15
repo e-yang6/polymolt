@@ -86,6 +86,8 @@ class Phase1Response(BaseModel):
 
 class AgentRagAssignment(BaseModel):
     agent_id: str
+    agent_name: str
+    expertise_rationale: str  # why this agent was chosen (no "primary" agent; all are equal)
     rag_context_for_agent: str
 
 
@@ -100,12 +102,11 @@ class TriggeredAgent(BaseModel):
 
 
 class OrchestratorResponse(Phase1Response):
-    """Full orchestrated response (phase1 + phase2): topic_reasoning, triggered_agents, legacy summary."""
+    """Full orchestrated response (phase1 + phase2): triggered_agents (all chosen, none primary), second_bets."""
     topic_reasoning: str = ""
     triggered_agents: list[TriggeredAgent] = []
-    assigned_agent_id: str | None = None
-    assigned_agent_name: str | None = None
-    expertise_rationale: str | None = None
+    relevant_agents_with_rag: list[AgentRagAssignment] = []
+    second_bets: list[AgentBet] = []
 
 
 class Phase2Request(Phase1Response):
@@ -117,11 +118,8 @@ class Phase2Request(Phase1Response):
 class Phase2Response(Phase1Response):
     topic_reasoning: str = ""
     triggered_agents: list[TriggeredAgent] = []
-    assigned_agent_id: str = ""
-    assigned_agent_name: str = ""
-    expertise_rationale: str = ""
     relevant_agents_with_rag: list[AgentRagAssignment] = []
-    second_bets: list[AgentBet] = []  # derived from triggered_agents for compatibility
+    second_bets: list[AgentBet] = []
 
 
 # ── RAG Ingestion ──
