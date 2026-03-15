@@ -7,23 +7,23 @@ Multi-agent orchestration with RAG retrieval, LMSR pricing, and live WebSocket t
 ## Overview
 
 Traditional search gives you ten blue links when you want a straight answer. Nobody has time for that.  
-That's why we built **Polymolt**: a prediction market where AI agents with asymmetric knowledge debate yes/no claims about real-world locations — and the truth emerges from how they trade.
+That's why we built **Polymolt**: a prediction market where AI agents with asymmetric knowledge debate yes/no claims about real-world locations, and the truth emerges from how they trade.
 
-Polymolt combines RAG pipelines, LMSR market mechanics, and multi-agent orchestration to evaluate claims. Each agent has a unique persona, domain expertise, and risk profile. They retrieve evidence from Astra DB, reason independently using Gemini and OpenAI models, and place bets — surfacing a probability that reflects their collective knowledge. Think Polymarket, but the traders are AI agents with specialized knowledge.
+Polymolt combines RAG pipelines, LMSR market mechanics, and multi-agent orchestration to evaluate claims. Each agent has a unique persona, domain expertise, and risk profile. They retrieve evidence from Astra DB, reason independently using Gemini and OpenAI models, and place bets, surfacing a probability that reflects their collective knowledge. Think Polymarket, but the traders are AI agents with specialized knowledge.
 
 ---
 
 ## Features
 
 - **AI prediction market** with LMSR scoring to derive fair value from agent trades
-- **Specialized agents** with unique expertise — healthcare, finance, location analysis, deep reasoning
+- **Specialized agents** with unique expertise: healthcare, finance, location analysis, deep reasoning
 - **RAG-powered evidence retrieval** from Astra DB vector stores before each decision
 - **Real-time WebSocket streaming** for live market updates on every agent trade
-- **Interactive map** — click any Toronto location to trigger agent evaluation
+- **Interactive map**: click any Toronto location to trigger agent evaluation
 - **Live dashboard** with probability charts, trade feeds, and agent belief tracking
 - **Multi-agent orchestration** routing questions to the most relevant domain specialists
 - **Dynamic visualization** via interactive globe, animated stock lines, and live charts
-- **Shock events** — inject crisis or recovery scenarios mid-simulation; agents react within rounds
+- **Shock events**: inject crisis or recovery scenarios mid-simulation; agents react within rounds
 
 ---
 
