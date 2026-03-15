@@ -77,6 +77,11 @@ class Phase1Request(BaseModel):
     where_filter: dict | None = None
 
 
+class OrchestrateRequest(Phase1Request):
+    """Request for /orchestrate: runs both phases; year is only used in Phase 2."""
+    year: int | None = None
+
+
 class Phase1Response(BaseModel):
     question: str
     location: str | None = None
@@ -102,6 +107,7 @@ class Phase2Request(Phase1Response):
     """Request body for POST /phase2: phase1 result plus optional question_prompt and model."""
     question_prompt: str | None = None
     model: str | None = None
+    year: int | None = None
 
 
 class Phase2Response(Phase1Response):

@@ -30,6 +30,7 @@ def phase2_sse_generator(request: Phase2Request) -> Iterator[str]:
         initial_bets=bets,
         question_prompt=request.question_prompt or None,
         model=request.model,
+        year=request.year,
     ):
         event_type = payload.get("event", "message")
         data = json.dumps(payload)
