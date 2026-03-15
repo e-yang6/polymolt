@@ -1,125 +1,94 @@
 # Polymolt
+AI-powered prediction market where specialized agents bet on real-world claims  
+Multi-agent orchestration with RAG retrieval, LMSR pricing, and live WebSocket trading  
 
-> Real-time prediction market for regional sustainability — powered by AI agents with asymmetric knowledge.
+---
 
-## What Is This?
+## Overview
 
-Polymolt is a Polymarket-style prediction market where **9 AI agents** trade on whether a selected region is sustainable. Each agent has different knowledge access, confidence levels, risk tolerance, and behavioral traits. The sustainability signal **emerges from market interaction** — not a formula.
+Traditional search gives you ten blue links when you want a straight answer. Nobody has time for that.  
+That's why we built **Polymolt**: a prediction market where AI agents with asymmetric knowledge debate yes/no claims about real-world locations — and the truth emerges from how they trade.
 
-It's also a study in LLM-like behavior under asymmetric information: how do agents with different evidence sets converge or disagree? When does a stubborn specialist override a cautious generalist?
+Polymolt combines RAG pipelines, LMSR market mechanics, and multi-agent orchestration to evaluate claims. Each agent has a unique persona, domain expertise, and risk profile. They retrieve evidence from Astra DB, reason independently using Gemini and OpenAI models, and place bets — surfacing a probability that reflects their collective knowledge. Think Polymarket, but the traders are AI agents with specialized knowledge.
+
+---
 
 ## Features
 
-- **Live market probability chart** — updates after every trade, tooltip shows agent name + direction
-- **Real-time trade feed** — agent name, direction, size, before/after probability, explanation
-- **9 agent cards** — specialists, hybrids, master generalist; flash on belief update, show last trade delta
-- **Agent detail panel** — categories, evidence, reasoning, behavior traits, belief history sparkline
-- **Behavior study view** — toggle panel ranking all 9 agents' beliefs vs. market price
-- **3 seeded demo regions** — Scandinavia (sustainable), Sub-Saharan Drought Belt (weak), Industrial Delta (contested)
-- **Shock events** — inject crisis or recovery scenarios mid-simulation; agents react within 2–3 rounds
-- **WebSocket-driven** — everything updates live in the browser
+- **AI prediction market** with LMSR scoring to derive fair value from agent trades
+- **Specialized agents** with unique expertise — healthcare, finance, location analysis, deep reasoning
+- **RAG-powered evidence retrieval** from Astra DB vector stores before each decision
+- **Real-time WebSocket streaming** for live market updates on every agent trade
+- **Interactive map** — click any Toronto location to trigger agent evaluation
+- **Live dashboard** with probability charts, trade feeds, and agent belief tracking
+- **Multi-agent orchestration** routing questions to the most relevant domain specialists
+- **Dynamic visualization** via interactive globe, animated stock lines, and live charts
+- **Shock events** — inject crisis or recovery scenarios mid-simulation; agents react within rounds
+
+---
 
 ## Architecture
 
-**Backend** = FastAPI. When you hit the route, the **pipeline runs** (RAG + specialized system-prompt agent):
+**Prediction Pipeline**  
+User Question → RAG Retrieval (Astra DB) → Agent Reasoning (Gemini/OpenAI) → LMSR Bet Sizing → Market Price Update → Frontend Dashboard
 
-```
-Browser / Client  ←→  FastAPI Backend (port 8000)
-                          POST /run  →  pipeline runs
-                              ├── RAG (embed → Chroma → context)
-                              ├── Prompt (system_prompt + context + message)
-                              └── OpenAI → response
-```
+**Market Engine**  
+Agent Belief → Confidence Scoring → Bet Size Calculation → LMSR Cost Function → Price History Update → WebSocket Broadcast
 
-- **RAG**: Query → OpenAI embeddings → Chroma retrieval → context string.
-- **Specialized agents**: Pass `system_prompt` in the request body (e.g. "You are a climate analyst. Use only the context.").
+**Orchestration Pipeline**  
+Question Intake → Domain Classification → Agent Selection → Parallel RAG + Reasoning → Bet Collection → Fair Value Computation
 
-Pipeline and flow reference live in `backend/`. See `backend/README.md` for details.
+---
 
-## Quick Start
+## Tech Stack
 
-**Prerequisites**: Node 18+, Python 3.11+, an OpenAI API key, and a Mapbox access token.
+| Category | Technologies |
+|---------|--------------|
+| AI & ML | OpenAI GPT, Google Gemini, Langflow |
+| Backend | Python, FastAPI, WebSockets, Uvicorn |
+| Frontend | Next.js, React, TypeScript, Tailwind CSS |
+| Database | Astra DB (Vector DB), IBM DB2, Langflow |
+| Visualization | Mapbox GL, Recharts, COBE Globe |
+| Communication | WebSockets, REST API |
 
-```bash
-# 1. Clone and enter
-cd polymolt
+---
 
-# 2. Backend (pipeline runs when you call POST /run)
-cd backend
-python -m pip install -r requirements.txt
-export OPENAI_API_KEY=your_key_here
-python -m uvicorn main:app --reload --port 8000
+## How It Works
 
-# 3. Frontend (new terminal)
-cd frontend
-npm install
+1. User clicks a location on the map or submits a yes/no claim.
+2. Orchestrator classifies the question domain and selects relevant agents.
+3. Each agent retrieves evidence from Astra DB collections via RAG.
+4. Agents reason independently using their specialized system prompts.
+5. Agents place YES/NO bets weighted by confidence and domain relevance.
+6. LMSR engine computes the fair probability from all agent bets.
+7. Market price updates in real time via WebSocket to the dashboard.
+8. Trade feed shows each agent's reasoning, direction, and price impact.
+9. Users can inject shock events to test how agents respond under pressure.
 
-# 3a. Set up Mapbox token (required for map functionality)
-# Create .env.local file with your Mapbox token:
-# NEXT_PUBLIC_MAPBOX_TOKEN=your_mapbox_token_here
-# Get your token from https://account.mapbox.com/access-tokens/
+---
 
-npm run dev
 
-# 4. Trigger the pipeline
-curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d '{"message": "What are the main climate risks for Scandinavia?"}'
+## Future Roadmap
 
-# 5. Open http://localhost:3000
-```
+- More agents with environmental, legal, and education expertise
+- Live data ingestion for real-time news and evidence feeds
+- Persistent agent memory for evolving beliefs across sessions
+- Multi-question markets running simultaneously
+- Mobile app for on-the-go location-based predictions
 
-## Sustainability Categories
+---
 
-1. Climate & Emissions
-2. Energy & Resource Systems
-3. Water & Ecosystems
-4. Infrastructure & Built Environment
-5. Economy & Social Resilience
-6. Governance & Policy
+## Team
 
-## Agent Roster
+| Member |
+|--------|
+| Derek Lau |
+| Jeffrey Wong |
+| Sihao Wu |
+| Ethan Yang |
 
-| Agent | Type | Power | Categories |
-|-------|------|-------|------------|
-| Climate Agent | Specialist | 1.0x | Climate & Emissions |
-| Energy Agent | Specialist | 1.0x | Energy & Resource Systems |
-| Water & Ecosystem Agent | Specialist | 1.0x | Water & Ecosystems |
-| Infrastructure Agent | Specialist | 1.0x | Infrastructure & Built Environment |
-| Social Resilience Agent | Specialist | 1.0x | Economy & Social Resilience |
-| Governance Agent | Specialist | 1.0x | Governance & Policy |
-| Environmental Generalist | Hybrid | 1.5x | Climate, Energy, Water |
-| Human Systems Generalist | Hybrid | 1.5x | Infrastructure, Social, Governance |
-| Master Generalist | Master | 2.0x | All 6 categories |
+---
 
-## Demo API
+## Links
 
-```bash
-# Inject a crisis event (agents react in ~2–3 rounds)
-curl -X POST http://localhost:8000/market/scandinavia/shock?shock_type=negative
-
-# Inject a recovery event
-curl -X POST http://localhost:8000/market/scandinavia/shock?shock_type=positive
-
-# Reset a specific region
-curl -X POST http://localhost:8000/market/scandinavia/reset
-```
-
-Or use the **Shock** / **Recover** buttons in the UI.
-
-## Future: RAG + Langflow
-
-The architecture preserves clean integration points for:
-- Category-based vector corpora (one per sustainability category)
-- Agent-specific retrieval access controls
-- Langflow orchestration workflows
-
-See `docs/04_rag_langflow_design.md` for the full design.
-
-## Docs
-
-- [Project Overview](docs/00_project_overview.md)
-- [Product Requirements](docs/01_product_requirements.md)
-- [Agent Design](docs/02_agent_design.md)
-- [Market Logic](docs/03_market_logic.md)
-- [RAG/Langflow Design](docs/04_rag_langflow_design.md)
-- [Frontend Spec](docs/05_frontend_spec.md)
-- [Build Phases](docs/06_build_phases.md)
+- Devpost submission: coming soon!
