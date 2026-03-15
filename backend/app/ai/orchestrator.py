@@ -155,7 +155,7 @@ def run_phase1_stream(
     Events: {"event": "agent_done", "bet": {...}} and {"event": "phase1_complete", "result": Phase1Response dict}.
     """
     if use_rag:
-        rag_chunks = retrieve_chunks(question, top_k=4)
+        rag_chunks = retrieve_chunks(question, top_k=4, collection_name="news_rag")
         rag_context = "\n\n".join(rag_chunks) if rag_chunks else ""
     else:
         rag_chunks = []
@@ -421,7 +421,7 @@ def run_orchestrated_initial(
     Use run_phase1 for "same as /run per agent".
     """
     if use_rag:
-        rag_chunks = retrieve_chunks(question, top_k=4, where_filter=where_filter)
+        rag_chunks = retrieve_chunks(question, top_k=4, collection_name="news_rag", where_filter=where_filter)
         context = "\n\n".join(rag_chunks) if rag_chunks else ""
     else:
         rag_chunks = []
@@ -449,7 +449,7 @@ def run_phase1(
     2. For each agent, run the same pipeline as POST /run; collect responses as initial_bets.
     """
     if use_rag:
-        rag_chunks = retrieve_chunks(question, top_k=4, where_filter=where_filter)
+        rag_chunks = retrieve_chunks(question, top_k=4, collection_name="news_rag", where_filter=where_filter)
         rag_context = "\n\n".join(rag_chunks) if rag_chunks else ""
     else:
         rag_chunks = []

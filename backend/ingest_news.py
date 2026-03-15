@@ -18,7 +18,7 @@ NEWS_SAMPLES = [
             {"year": 2024, "location_type": "hospital", "target": "downtown_network"},
             {"year": 2023, "location_type": "nursery", "target": "sickkids"}
         ],
-        "collection_name": "rag"
+        "collection_name": "news_rag"
     },
     {
         "texts": [

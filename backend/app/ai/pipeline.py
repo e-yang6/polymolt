@@ -47,6 +47,7 @@ def run_pipeline(
     use_rag: bool = True,
     model: str | None = None,
     additional_context: str | None = None,
+    collection_name: str | None = None,
 ) -> str:
     """
     Run the pipeline: optional RAG retrieval + optional additional context + prompt → LLM → response.
@@ -56,7 +57,13 @@ def run_pipeline(
 
     system = _resolve_system_prompt(system_prompt, agent_id)
     chat_model = _resolve_model(model, agent_id)
-    rag_context = retrieve(message, top_k=4) if use_rag else ""
+    
+    # Default: orchestrator (no agent_id) uses 'rag' (deprecated) or provided name.
+    # Agents (with agent_id) use 'sample_rag' unless overridden.
+    if collection_name is None:
+        collection_name = "sample_rag" if agent_id else "news_rag"
+
+    rag_context = retrieve(message, top_k=4, collection_name=collection_name) if use_rag else ""
 
     context_parts: list[str] = []
     if rag_context:

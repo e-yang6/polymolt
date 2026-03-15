@@ -12,7 +12,7 @@ SAMPLES = [
             "The Royal Ontario Museum's new interactive exhibit has been rated 4.5/5 by weekend visitors, significantly improving the attraction's overall appeal."
         ],
         "ids": ["review_littletykes_nursery", "review_rom_exhibit"],
-        "collection_name": "rag"
+        "collection_name": "sample_rag"
     }
 ]
 
