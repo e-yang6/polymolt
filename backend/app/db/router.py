@@ -1,12 +1,12 @@
 """
-Database router — IBM Db2-backed endpoints for persisting questions and stakeholder AI perspectives.
+Database router — Supabase-backed endpoints for persisting questions and stakeholder AI perspectives.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from app.db.db2 import (
+from app.db.supabase import (
     StakeholderPerspective,
     StakeholderResponseRow,
     QuestionRow,

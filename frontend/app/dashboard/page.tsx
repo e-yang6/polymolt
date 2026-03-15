@@ -8,11 +8,17 @@ import { MarketPanel } from "@/components/market/MarketPanel"
 import { TradeFeed } from "@/components/trades/TradeFeed"
 import { AgentReasoningDrawer } from "@/components/trades/AgentReasoningDrawer"
 import type { MarketState, Region } from "@/types/market"
+import type { QuestionSummary } from "@/types/question"
+import { BACKEND_URL } from "@/lib/config"
 
 export default function DashboardPage() {
   const orch = useOrchestration()
   const [hasStarted, setHasStarted] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const [pastQuestions, setPastQuestions] = useState<QuestionSummary[]>([])
+  const [loadingQuestions, setLoadingQuestions] = useState(false)
+  const [questionsError, setQuestionsError] = useState<string | null>(null)
+  const [fetchTrigger, setFetchTrigger] = useState(0)
 
   // Read URL params on mount and auto-start orchestration
   useEffect(() => {
@@ -25,6 +31,33 @@ export default function DashboardPage() {
       orch.start(q, loc || "")
     }
   }, [hasStarted]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch past questions when idle
+  useEffect(() => {
+    if (hasStarted) return
+    setLoadingQuestions(true)
+    setQuestionsError(null)
+    fetch(`${BACKEND_URL}/db/questions`)
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}))
+        if (!r.ok) {
+          const msg = typeof (data as { detail?: string }).detail === "string"
+            ? (data as { detail: string }).detail
+            : `Failed to load questions (${r.status})`
+          throw new Error(msg)
+        }
+        return data as { questions?: QuestionSummary[] }
+      })
+      .then((data) => {
+        const list = Array.isArray(data?.questions) ? data.questions : []
+        setPastQuestions(list)
+      })
+      .catch((e) => {
+        setPastQuestions([])
+        setQuestionsError(e instanceof Error ? e.message : "Failed to load questions")
+      })
+      .finally(() => setLoadingQuestions(false))
+  }, [hasStarted, fetchTrigger])
 
   // Construct MarketState for MarketPanel
   const market: MarketState | null =
@@ -96,18 +129,99 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* No question selected */}
+        {/* Idle: show past questions */}
         {orch.status === "idle" && !hasStarted && (
-          <div className="flex flex-col items-center justify-center gap-4 py-20">
-            <p className="text-neutral-500 text-sm">
-              No question selected. Click a location on the map to ask a question.
-            </p>
-            <Link
-              href="/map"
-              className="px-5 py-2.5 rounded-lg bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition-colors"
-            >
-              Go to Map
-            </Link>
+          <div className="flex flex-col gap-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-neutral-900">Past Questions</h2>
+                <p className="text-sm text-neutral-500 mt-0.5">
+                  Select a question to rerun the market simulation, or ask a new one from the map.
+                </p>
+              </div>
+              <Link
+                href="/map"
+                className="flex-shrink-0 px-4 py-2 rounded-lg bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition-colors"
+              >
+                Ask New Question
+              </Link>
+            </div>
+
+            {loadingQuestions && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="rounded-lg border border-neutral-200 p-4 space-y-3 animate-pulse">
+                    <div className="h-4 w-24 bg-neutral-100 rounded" />
+                    <div className="h-3 w-full bg-neutral-50 rounded" />
+                    <div className="h-3 w-20 bg-neutral-50 rounded" />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!loadingQuestions && questionsError && (
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <p className="text-red-600 text-sm">{questionsError}</p>
+                <button
+                  type="button"
+                  onClick={() => setFetchTrigger((n) => n + 1)}
+                  className="px-5 py-2.5 rounded-lg bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {!loadingQuestions && !questionsError && pastQuestions.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <p className="text-neutral-400 text-sm">No questions yet. Head to the map to ask your first one.</p>
+                <Link
+                  href="/map"
+                  className="px-5 py-2.5 rounded-lg bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition-colors"
+                >
+                  Go to Map
+                </Link>
+              </div>
+            )}
+
+            {!loadingQuestions && !questionsError && pastQuestions.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {pastQuestions.map((q) => {
+                  const total = q.yes_count + q.no_count
+                  const yesPct = total > 0 ? Math.round((q.yes_count / total) * 100) : null
+                  return (
+                    <button
+                      key={q.id}
+                      onClick={() => {
+                        setHasStarted(true)
+                        orch.start(q.question_text, q.location)
+                      }}
+                      className="text-left rounded-lg border border-neutral-200 p-4 hover:border-neutral-400 hover:shadow-sm transition-all group"
+                    >
+                      <div className="text-xs font-medium text-neutral-500 group-hover:text-neutral-700 transition-colors">
+                        {q.location}
+                      </div>
+                      <p className="mt-1 text-sm text-neutral-900 line-clamp-2">
+                        {q.question_text}
+                      </p>
+                      <div className="mt-3 flex items-center gap-2 text-xs text-neutral-400">
+                        {yesPct != null ? (
+                          <>
+                            <span className="text-emerald-600">Yes {yesPct}%</span>
+                            <span>·</span>
+                            <span>{total} votes</span>
+                          </>
+                        ) : (
+                          <span>No votes yet</span>
+                        )}
+                        <span>·</span>
+                        <span>{new Date(q.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 

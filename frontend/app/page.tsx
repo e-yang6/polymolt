@@ -207,6 +207,9 @@ export default function HeroPage() {
       <nav className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-6 py-4">
         <span className="font-bold text-neutral-900 text-lg tracking-tight">polymolt</span>
         <div className="flex items-center gap-4">
+          <Link href="/dashboard" className="text-sm text-neutral-500 hover:text-neutral-900 transition-colors">
+            dashboard
+          </Link>
           <span className="text-sm text-neutral-500">about</span>
           <span className="text-sm text-neutral-500">contact</span>
         </div>
