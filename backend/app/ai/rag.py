@@ -107,7 +107,8 @@ def add_documents(
     collection_name: str = "rag",
     metadatas: list[dict] | None = None,
 ) -> None:
-    """Add documents to the vector store (embeds and stores). Uses agents DB for sample_rag*, orchestrator DB for news_rag*."""
+    """Add documents to the vector store (embeds and stores).
+    Invalidates the RAG retrieval cache for this collection after insert."""
     if not texts:
         return
     if ids is None:
@@ -126,8 +127,6 @@ def add_documents(
     v_ids = [ids[i] for i in valid_idx]
     v_metadatas = [metadatas[i] for i in valid_idx] if metadatas else None
 
-    # Use actual embedding dimension so Astra collection matches the model (e.g. HF vs OpenAI).
-    # Collection name is suffixed with dimension so different models don't conflict (e.g. rag_768 vs rag_1536).
     embedding_dim = len(v_embeddings[0])
     actual_name = f"{collection_name}_{embedding_dim}"
     coll = get_collection(actual_name, embedding_dimension=embedding_dim)
@@ -145,6 +144,14 @@ def add_documents(
         documents.append(doc)
     coll.insert_many(documents)
 
+    from app.cache import cache_invalidate_rag, vector_cache_invalidate
+    d1 = cache_invalidate_rag(collection_name)
+    d2 = vector_cache_invalidate(collection_name)
+    logger.info(
+        "Ingested %d docs into %s; invalidated %d exact-cache + %d vector-cache entries",
+        len(documents), actual_name, d1, d2,
+    )
+
 
 def retrieve_chunks(
     query: str,
@@ -153,20 +160,43 @@ def retrieve_chunks(
     where_filter: dict | None = None,
 ) -> list[str]:
     """
-    Retrieve top_k document chunks for the query (by vector similarity).
-    Uses agents DB for sample_rag/rag*, orchestrator DB for news_rag*.
-    Returns list of document text strings.
-    Uses collection_name_{dimension} so it matches the collection used by add_documents for the same embed model.
+    Retrieve top_k document chunks by vector similarity.
+
+    Three-tier cache:
+      L1  Exact-match cache   — keyed by query string hash (fast, single GET)
+      L2  Semantic vector cache — cosine-similarity against cached embeddings
+      L3  Astra DB             — full vector search (slowest)
+
+    On L3 hit the result is stored in both L1 and L2 for future queries.
     """
+    from app.cache import (
+        rag_cache_get, rag_cache_set, TTL_RAG_RETRIEVAL,
+        vector_cache_lookup, vector_cache_store,
+    )
+
+    # ── L1: exact-match on query string ──────────────────────────────
+    cached = rag_cache_get(collection_name, query, top_k, where_filter)
+    if cached is not None:
+        logger.debug("L1 exact cache HIT collection=%s chunks=%d", collection_name, len(cached))
+        return cached
+
+    # ── Compute embedding (itself cached in the embed layer) ─────────
+    emb = embed(query)
+    if not emb:
+        return []
+
+    # ── L2: semantic vector cache ────────────────────────────────────
+    vcache_hit = vector_cache_lookup(collection_name, emb, top_k, where_filter)
+    if vcache_hit is not None:
+        rag_cache_set(collection_name, query, top_k, where_filter, value=vcache_hit, ttl=TTL_RAG_RETRIEVAL)
+        return vcache_hit
+
+    # ── L3: Astra DB vector search ───────────────────────────────────
     which = _which_db_for_collection(collection_name)
     try:
         db = _get_database(which)
     except Exception as e:
         logger.debug("Astra get_database (%s) failed: %s", which, e)
-        return []
-
-    emb = embed(query)
-    if not emb:
         return []
 
     actual_name = f"{collection_name}_{len(emb)}"
@@ -191,7 +221,13 @@ def retrieve_chunks(
         logger.warning("Astra find failed: %s", e)
         return []
 
-    return [d["text"] for d in docs if d.get("text")]
+    chunks = [d["text"] for d in docs if d.get("text")]
+
+    if chunks:
+        rag_cache_set(collection_name, query, top_k, where_filter, value=chunks, ttl=TTL_RAG_RETRIEVAL)
+        vector_cache_store(collection_name, emb, top_k, where_filter, chunks)
+
+    return chunks
 
 
 def retrieve(

@@ -251,6 +251,7 @@ def save_question_with_perspectives(
             len(perspectives),
         )
 
+        _invalidate_db_cache()
         return question_id
 
 
@@ -280,13 +281,27 @@ def create_question_only(question: str, location: str) -> int:
     with db2_connection() as conn:
         question_id = _insert_question(conn, question, location)
         logger.info("Created question %s (no stakeholder responses yet)", question_id)
+        _invalidate_db_cache()
         return question_id
+
+
+def _invalidate_db_cache() -> None:
+    """Clear all DB read caches after a write operation."""
+    from app.cache import cache_invalidate_namespace, NS_DB
+    cache_invalidate_namespace(NS_DB)
 
 
 def list_recent_questions(limit: int = 50) -> list[QuestionSummary]:
     """
-    Return most recent questions with simple yes/no counts.
+    Return most recent questions with simple yes/no counts.  Cached in Redis.
     """
+    from app.cache import cache_get, cache_set, NS_DB, TTL_DB_READ
+
+    cache_key_parts = ("list_recent_questions", limit)
+    cached = cache_get(NS_DB, *cache_key_parts)
+    if cached is not None:
+        return [QuestionSummary(**row) for row in cached]
+
     with db2_connection() as conn:
         sql = """
             SELECT
@@ -321,6 +336,12 @@ def list_recent_questions(limit: int = 50) -> list[QuestionSummary]:
             )
             row = ibm_db.fetch_assoc(stmt)
 
+        serializable = [
+            {"id": r.id, "question_text": r.question_text, "location": r.location,
+             "created_at": r.created_at, "yes_count": r.yes_count, "no_count": r.no_count}
+            for r in results
+        ]
+        cache_set(NS_DB, *cache_key_parts, value=serializable, ttl=TTL_DB_READ)
         return results
 
 
@@ -328,8 +349,18 @@ def get_question_with_responses(
     question_id: int,
 ) -> tuple[QuestionRow, list[StakeholderResponseRow]]:
     """
-    Load a single question and all of its stakeholder responses.
+    Load a single question and all of its stakeholder responses.  Cached in Redis.
     """
+    from app.cache import cache_get, cache_set, NS_DB, TTL_DB_READ
+
+    cache_key_parts = ("get_question_with_responses", question_id)
+    cached = cache_get(NS_DB, *cache_key_parts)
+    if cached is not None:
+        q_data, resp_data = cached["question"], cached["responses"]
+        question = QuestionRow(**q_data)
+        responses = [StakeholderResponseRow(**r) for r in resp_data]
+        return question, responses
+
     with db2_connection() as conn:
         # Question
         q_sql = """
@@ -391,6 +422,21 @@ def get_question_with_responses(
             )
             r_row = ibm_db.fetch_assoc(r_stmt)
 
+        serializable = {
+            "question": {
+                "id": question.id, "question_text": question.question_text,
+                "location": question.location, "created_at": question.created_at,
+            },
+            "responses": [
+                {"id": r.id, "question_id": r.question_id, "phase": r.phase,
+                 "stakeholder_id": r.stakeholder_id, "stakeholder_role": r.stakeholder_role,
+                 "ai_agent_id": r.ai_agent_id, "answer": r.answer,
+                 "confidence": r.confidence, "reasoning": r.reasoning,
+                 "created_at": r.created_at}
+                for r in responses
+            ],
+        }
+        cache_set(NS_DB, *cache_key_parts, value=serializable, ttl=TTL_DB_READ)
         return question, responses
 
 
@@ -486,6 +532,7 @@ def save_orchestrate_response(question: str, location: str, response: dict[str, 
             len(initial_bets),
             len(triggered),
         )
+        _invalidate_db_cache()
         return question_id
 
 
@@ -544,7 +591,14 @@ class OrchestrateRunRow:
 
 
 def get_orchestrate_run(question_id: int) -> OrchestrateRunRow | None:
-    """Load the orchestrate run for a question, if any."""
+    """Load the orchestrate run for a question, if any.  Cached in Redis."""
+    from app.cache import cache_get, cache_set, NS_DB, TTL_DB_READ
+
+    cache_key_parts = ("get_orchestrate_run", question_id)
+    cached = cache_get(NS_DB, *cache_key_parts)
+    if cached is not None:
+        return OrchestrateRunRow(**cached) if cached != "__none__" else None
+
     with db2_connection() as conn:
         sql = """
             SELECT id, question_id,
@@ -562,8 +616,9 @@ def get_orchestrate_run(question_id: int) -> OrchestrateRunRow | None:
         ibm_db.execute(stmt, (question_id,))
         row = ibm_db.fetch_assoc(stmt)
         if not row:
+            cache_set(NS_DB, *cache_key_parts, value="__none__", ttl=TTL_DB_READ)
             return None
-        return OrchestrateRunRow(
+        result = OrchestrateRunRow(
             id=int(row["ID"]),
             question_id=int(row["QUESTION_ID"]),
             topic_reasoning=str(row["TOPIC_REASONING"]),
@@ -574,5 +629,14 @@ def get_orchestrate_run(question_id: int) -> OrchestrateRunRow | None:
             full_response=str(row["FULL_RESPONSE"]) if row.get("FULL_RESPONSE") else None,
             created_at=str(row["CREATED_AT"]),
         )
+        serializable = {
+            "id": result.id, "question_id": result.question_id,
+            "topic_reasoning": result.topic_reasoning, "deep_analysis": result.deep_analysis,
+            "assigned_agent_id": result.assigned_agent_id, "expertise_rationale": result.expertise_rationale,
+            "rag_context": result.rag_context, "full_response": result.full_response,
+            "created_at": result.created_at,
+        }
+        cache_set(NS_DB, *cache_key_parts, value=serializable, ttl=TTL_DB_READ)
+        return result
 
 
