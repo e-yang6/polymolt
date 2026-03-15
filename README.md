@@ -43,6 +43,20 @@ Polymolt combines RAG pipelines, LMSR market mechanics, and multi-agent orchestr
 **Prediction Pipeline**  
 User Question → RAG Retrieval (Astra DB) → Agent Reasoning (Gemini/OpenAI) → LMSR Bet Sizing → Market Price Update → Frontend Dashboard
 
+### Dual RAG Systems
+
+Polymolt runs **two distinct RAG pipelines** that feed different parts of the system:
+
+- **Agent RAG (micro-perspectives)**  
+  - Each specialist agent has its own Astra DB collection with curated documents and guardrails.  
+  - RAG prompts are tailored to that agent’s persona (e.g., climate, infrastructure, social resilience), so their bets reflect **domain-specific evidence and guidelines**, not a generic internet search.
+
+- **Orchestrator RAG (macro context)**  
+  - A separate Astra DB collection stores **web‑scraped regional context**: local news, policy reports, infrastructure projects, climate risks, etc.  
+  - The orchestrator queries this corpus to build a shared summary of the region, which is then passed into the agents as high‑level context and used to explain why certain agents should have more weight on a given question.
+
+Together, these two RAG systems let agents reason from focused expertise while the orchestrator keeps everyone grounded in the latest regional reality.
+
 **Market Engine**  
 Agent Belief → Confidence Scoring → Bet Size Calculation → LMSR Cost Function → Price History Update → SSE broadcast
 
