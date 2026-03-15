@@ -2,6 +2,7 @@
   <img src="docs/logo.png" alt="Polymolt" width="200" />
   <h1>Polymolt</h1>
   <p>AI-powered prediction market where specialized agents bet on real-world claims<br>Multi-agent orchestration with RAG retrieval, LMSR pricing, and live Server-Sent Events (SSE) streaming</p>
+
 </div>  
 
 ---
@@ -75,29 +76,93 @@ Question Intake → Domain Classification → Agent Selection → Parallel RAG +
 
 ## Getting Started
 
-**Prerequisites**: Node 18+, Python 3.11+, an OpenAI API key, and a Mapbox access token.
+### Prerequisites
+
+- **Node.js** 18+
+- **Python** 3.11+
+- **API keys** (see Environment Variables below):
+  - [OpenAI](https://platform.openai.com/api-keys) — GPT-4o-mini for agent reasoning
+  - [Google Gemini](https://aistudio.google.com/apikey) — embeddings and optional chat
+  - [DataStax Astra DB](https://astra.datastax.com/) — vector database for RAG retrieval
+  - [Mapbox](https://account.mapbox.com/access-tokens/) — interactive map
+  - [Upstash Redis](https://console.upstash.com/) *(optional)* — response caching
+
+### Setup
 
 ```bash
-# 1. Clone and enter
+# 1. Clone the repository
+git clone https://github.com/e-yang6/polymolt.git
 cd polymolt
+```
 
+```bash
 # 2. Backend
 cd backend
 python -m pip install -r requirements.txt
-export OPENAI_API_KEY=your_key_here
+cp .env.example .env          # then fill in your API keys (see below)
 python -m uvicorn main:app --reload --port 8000
+```
 
+```bash
 # 3. Frontend (new terminal)
 cd frontend
 npm install
-
-# Create .env.local with your Mapbox token:
-# NEXT_PUBLIC_MAPBOX_TOKEN=your_mapbox_token_here
-# Get your token from https://account.mapbox.com/access-tokens/
-
+# Create .env.local:
+echo 'NEXT_PUBLIC_MAPBOX_TOKEN=your_mapbox_token_here' > .env.local
 npm run dev
+```
 
+```bash
 # 4. Open http://localhost:3000
+```
+
+### Environment Variables
+
+The backend reads from `backend/.env`. Copy the example and fill in your keys:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | Yes | OpenAI API key for GPT-4o-mini agent reasoning |
+| `GOOGLE_API_KEY` | Yes | Google Gemini API key for embeddings |
+| `ASTRA_DB_API_ENDPOINT` | Yes | Astra DB endpoint for agent RAG collection |
+| `ASTRA_DB_APPLICATION_TOKEN` | Yes | Astra DB token for agent RAG collection |
+| `ASTRA_DB_ORCHESTRATOR_API_ENDPOINT` | Yes | Astra DB endpoint for orchestrator news RAG |
+| `ASTRA_DB_ORCHESTRATOR_APPLICATION_TOKEN` | Yes | Astra DB token for orchestrator news RAG |
+| `UPSTASH_REDIS_REST_URL` | No | Upstash Redis URL for caching |
+| `UPSTASH_REDIS_REST_TOKEN` | No | Upstash Redis token for caching |
+| `DB2_DSN` | No | IBM Db2 connection string for persistent storage |
+
+The frontend reads from `frontend/.env.local`:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | Yes | Mapbox GL access token for the interactive map |
+
+---
+
+## Project Structure
+
+```
+polymolt/
+├── backend/                  # FastAPI server (Python 3.11+)
+│   ├── main.py               # App entrypoint — mounts /ai, /db, /market routers
+│   ├── app/
+│   │   ├── ai/               # RAG pipeline, orchestrator, SSE streaming, bet sizing
+│   │   ├── agents/           # Agent definitions — persona, expertise, risk profiles
+│   │   ├── market/           # LMSR engine, market state, simulation
+│   │   ├── db/               # IBM Db2 persistence layer
+│   │   ├── models/           # OpenAI + Gemini wrappers (chat & embeddings)
+│   │   ├── data/             # Toronto open-data scrapers (TTC, parks, libraries)
+│   │   ├── config.py         # Environment variable loader
+│   │   └── cache.py          # Upstash Redis caching
+│   ├── Dockerfile            # Cloud Run deployment
+│   └── requirements.txt
+├── frontend/                 # Next.js 16 + React 19 + Tailwind CSS
+│   ├── app/                  # Pages: landing, dashboard, map, agents
+│   ├── components/           # UI: map, market panel, trade feed, globe
+│   ├── lib/                  # Hooks, context providers, utilities
+│   └── types/                # TypeScript type definitions
+└── docs/                     # Design docs, diagrams, task breakdowns
 ```
 
 ---
@@ -125,4 +190,4 @@ npm run dev
 
 ## Links
 
-- Devpost submission: coming soon!
+- **Devpost**: coming soon
