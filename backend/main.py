@@ -45,4 +45,5 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    from app.cache import redis_health
+    return {"status": "ok", "redis": redis_health()}
