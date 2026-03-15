@@ -22,10 +22,21 @@ export default function DashboardPage() {
   const [questionsError, setQuestionsError] = useState<string | null>(null)
   const [fetchTrigger, setFetchTrigger] = useState(0)
 
-  // Read URL params on mount and auto-start orchestration
+  // Read URL params on mount and auto-start orchestration or load historical
   useEffect(() => {
     if (hasStarted) return
     const sp = new URLSearchParams(window.location.search)
+
+    const qid = sp.get("question_id")
+    if (qid) {
+      const id = parseInt(qid, 10)
+      if (!isNaN(id)) {
+        setHasStarted(true)
+        orch.loadHistorical(id)
+        return
+      }
+    }
+
     const q = sp.get("question")
     const loc = sp.get("location")
     if (q) {
