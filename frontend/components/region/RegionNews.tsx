@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react"
 import { Region } from "@/types/market"
 import { RegionNewsResponse } from "@/types/news"
-
-const API_BASE = "http://localhost:8000"
+import { BACKEND_URL as API_BASE } from "@/lib/config"
 
 interface Props {
   region: Region | null

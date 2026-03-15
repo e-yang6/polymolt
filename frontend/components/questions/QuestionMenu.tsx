@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { QuestionDetail, QuestionSummary } from "@/types/question"
 import { X, PlusCircle } from "lucide-react"
-
-const API_BASE = "http://localhost:8000"
+import { BACKEND_URL as API_BASE } from "@/lib/config"
 
 interface Props {
   open: boolean

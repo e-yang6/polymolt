@@ -4,8 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { MarketState, Region } from "@/types/market"
 import { Agent } from "@/types/agent"
 import { TradeEntry } from "@/types/trade"
-
-const API_BASE = "http://localhost:8000"
+import { BACKEND_URL as API_BASE } from "@/lib/config"
 const MAX_TRADES = 150
 const MAX_BELIEF_HISTORY = 50
 

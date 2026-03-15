@@ -2,8 +2,7 @@
 
 import { createContext, useContext, useState, useRef, useCallback, useEffect, type ReactNode } from "react"
 import type { TradeEntry } from "@/types/trade"
-
-const BACKEND = "http://localhost:8000"
+import { BACKEND_URL as BACKEND } from "@/lib/config"
 const YEARS = [2021, 2022, 2023, 2024, 2025]
 
 // ── Types ─────────────────────────────────────────────────────────────
