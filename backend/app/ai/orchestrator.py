@@ -22,7 +22,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Iterator
 
 from app.models import generate
-from app.ai.pipeline import run_pipeline
 from app.ai.rag import retrieve, retrieve_chunks, embed as embed_text
 from app.ai.bet_sizing import get_bet_for_agent, compute_confidence
 
@@ -55,11 +54,11 @@ Consider the following question or claim:
 
 {context_block}
 
-Evaluate this location/claim from your area of expertise.
-Respond with ONLY a strict JSON object (no prose before or after):
+Evaluate this location/claim from your area of expertise. Give a thorough, detailed explanation of your reasoning.
+Respond with ONLY a strict JSON object. Do NOT use markdown formatting anywhere.
 {{
   "answer": "YES" or "NO",
-  "reasoning": "<1-3 sentence explanation>"
+  "reasoning": "<detailed plain-text explanation, no markdown>"
 }}
 """
 
@@ -70,11 +69,18 @@ def _run_single_bet(
     context: str,
     model: str | None,
     question_embedding: list[float] | None = None,
+    additional_context: str | None = None,
 ) -> dict[str, Any]:
-    ctx = f"Context:\n{context}" if context else "(No additional context.)"
+    context_parts: list[str] = []
+    if context:
+        context_parts.append(f"Context:\n{context}")
+    if additional_context:
+        context_parts.append(f"Additional context:\n{additional_context}")
+    ctx = "\n\n".join(context_parts) if context_parts else "(No additional context.)"
+
     system = _BET_SYSTEM.format(agent_name=agent.name, system_prompt=agent.system_prompt)
     user = _BET_USER.format(question=question, context_block=ctx)
-    raw = generate(user, system_prompt=system, model=agent.model or model, max_tokens=300)
+    raw = generate(user, system_prompt=system, model=agent.model or model, max_tokens=1000, json_mode=True)
 
     try:
         data = json.loads(raw)
@@ -120,37 +126,12 @@ def _run_single_agent_bet(
     model: str | None,
     question_embedding: list[float] | None = None,
 ) -> dict[str, Any]:
-    """Run pipeline for one agent and return bet dict. Used for parallel phase1."""
-    raw = run_pipeline(
-        message=question,
-        agent_id=agent.id,
-        use_rag=use_rag,
-        model=model,
-    )
-    try:
-        data = json.loads(raw)
-        answer = _normalize_answer(str(data.get("answer", "UNKNOWN")))
-        reasoning = str(data.get("reasoning", ""))
-    except Exception:
-        logger.warning("Agent %s pipeline returned non-JSON: %s", agent.id, raw[:200])
-        answer = "NO"  # UNKNOWN → NO
-        reasoning = raw
-
-    bet_info = get_bet_for_agent(
-        agent,
-        question_prompt=question,
-        response_text=reasoning,
-        question_embedding=question_embedding,
-    )
-    confidence = compute_confidence(bet_info)
-
-    return {
-        "agent_id": agent.id,
-        "agent_name": agent.name,
-        "answer": answer,
-        "confidence": confidence,
-        "reasoning": reasoning,
-    }
+    """Run bet for one agent with its own RAG. Used for parallel phase1."""
+    rag_context = ""
+    if use_rag:
+        collection = "sample_rag" if agent.id else "news_rag"
+        rag_context = retrieve(question, top_k=4, collection_name=collection)
+    return _run_single_bet(question, agent, rag_context, model, question_embedding=question_embedding)
 
 
 def _run_phase1_via_pipeline(
@@ -159,7 +140,7 @@ def _run_phase1_via_pipeline(
     model: str | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Phase 1 using /run pipeline: run run_pipeline for each agent (same as POST /run per agent).
+    Phase 1: run each agent with structured bet prompt + its own RAG.
     Returns list of bets; each response is parsed as JSON if possible, else reasoning=response.
     """
     q_emb = embed_text(question)
@@ -240,7 +221,7 @@ def _extract_key_facts_from_rag(
         f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(rag_chunks)
     )
     user = _KEY_FACTS_USER.format(question=question, rag_chunks_numbered=rag_numbered)
-    raw = generate(user, system_prompt=_KEY_FACTS_SYSTEM, model=model, max_tokens=1500)
+    raw = generate(user, system_prompt=_KEY_FACTS_SYSTEM, model=model, max_tokens=1500, json_mode=True)
     try:
         data = json.loads(raw)
         items = data.get("key_facts") or []
@@ -341,7 +322,7 @@ def _identify_expertise_and_assign_rag(
         agent_descriptions_with_prompts=agent_descriptions_with_prompts,
     )
     # Using a larger max_tokens because we're asking for more detail
-    raw = generate(user, system_prompt=_EXPERTISE_SYSTEM, model=model, max_tokens=2000)
+    raw = generate(user, system_prompt=_EXPERTISE_SYSTEM, model=model, max_tokens=2000, json_mode=True)
 
     try:
         data = json.loads(raw)
@@ -366,39 +347,14 @@ def _run_single_agent_second_bet(
     model: str | None,
     question_embedding: list[float] | None = None,
 ) -> dict[str, Any]:
-    """Run pipeline for one triggered agent: original RAG (agent's own) + orchestrator context as extra."""
+    """Run bet for one triggered agent: agent's own RAG + orchestrator context as additional."""
     agent = get_agent(agent_id) or AGENTS[0]
-    raw = run_pipeline(
-        message=question,
-        agent_id=agent_id,
-        use_rag=True,
-        model=model,
+    rag_context = retrieve(question, top_k=4, collection_name="sample_rag")
+    return _run_single_bet(
+        question, agent, rag_context, model,
+        question_embedding=question_embedding,
         additional_context=context_for_agent,
     )
-    try:
-        data = json.loads(raw)
-        answer = _normalize_answer(str(data.get("answer", "UNKNOWN")))
-        reasoning = str(data.get("reasoning", ""))
-    except Exception:
-        logger.warning("Agent %s second bet returned non-JSON: %s", agent_id, raw[:200])
-        answer = "NO"  # UNKNOWN → NO
-        reasoning = raw
-
-    bet_info = get_bet_for_agent(
-        agent,
-        question_prompt=question,
-        response_text=reasoning,
-        question_embedding=question_embedding,
-    )
-    confidence = compute_confidence(bet_info)
-
-    return {
-        "agent_id": agent.id,
-        "agent_name": agent.name,
-        "answer": answer,
-        "confidence": confidence,
-        "reasoning": reasoning,
-    }
 
 
 # ── Public entry points ─────────────────────────────────────────────────

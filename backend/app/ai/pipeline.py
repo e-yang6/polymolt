@@ -73,14 +73,4 @@ def run_pipeline(
 
     context_block = "\n\n".join(context_parts) + "\n\n" if context_parts else ""
     user_content = f"{context_block}{message}"
-    response = generate(user_content, system_prompt=system, model=chat_model, max_tokens=CHAT_MAX_TOKENS)
-
-    has_any_context = bool(rag_context or additional_context)
-    if use_rag or additional_context:
-        if has_any_context:
-            header = "🟢 [CONTEXT ACTIVE]\n" + "="*40 + "\n"
-        else:
-            header = "🔴 [NO CONTEXT FOUND]\n" + "="*40 + "\n"
-        return f"{header}{response}"
-
-    return response
+    return generate(user_content, system_prompt=system, model=chat_model, max_tokens=CHAT_MAX_TOKENS)
