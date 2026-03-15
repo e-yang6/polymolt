@@ -191,4 +191,5 @@ polymolt/
 
 ## Links
 
-- **Devpost**: coming soon
+- **Try it here**: https://polymolt.vercel.app/
+- **Devpost**: https://devpost.com/software/polymolt
