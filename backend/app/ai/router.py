@@ -2,14 +2,13 @@
 AI pipeline router — single-agent run + orchestrated prediction pipeline.
 """
 
-import json
-
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.ai.pipeline import run_pipeline
-from app.ai.orchestrator import run_phase1, run_phase1_stream, run_orchestrated_phase2, run_phase2_stream
+from app.ai.orchestrator import run_phase1, run_orchestrated_phase2
 from app.ai.rag import add_documents
+from app.ai.sse import phase1_sse_generator, phase2_sse_generator
 from app.ai.schemas import (
     RunRequest,
     RunResponse,
@@ -80,18 +79,6 @@ def phase1(request: Phase1Request):
     return Phase1Response(**result)
 
 
-def _phase1_sse_generator(request: Phase1Request):
-    """Yield SSE-formatted lines for phase1 stream."""
-    for payload in run_phase1_stream(
-        question=request.question,
-        use_rag=request.use_rag,
-        model=request.model,
-    ):
-        event_type = payload.get("event", "message")
-        data = json.dumps(payload)
-        yield f"event: {event_type}\ndata: {data}\n\n"
-
-
 @router.post("/phase1/stream")
 def phase1_stream(request: Phase1Request):
     """
@@ -99,7 +86,7 @@ def phase1_stream(request: Phase1Request):
     then a final phase1_complete event with the full result.
     """
     return StreamingResponse(
-        _phase1_sse_generator(request),
+        phase1_sse_generator(request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -137,23 +124,6 @@ def phase2(request: Phase2Request):
     )
 
 
-def _phase2_sse_generator(request: Phase2Request):
-    """Yield SSE-formatted lines for phase2 stream."""
-    bets = [b.model_dump() for b in request.initial_bets]
-    for payload in run_phase2_stream(
-        question=request.question,
-        initial_bets=bets,
-        web_scrape_snippets=request.web_scrape_snippets,
-        rag_context=request.rag_context,
-        rag_chunks=request.rag_chunks or None,
-        question_prompt=request.question_prompt or None,
-        model=request.model,
-    ):
-        event_type = payload.get("event", "message")
-        data = json.dumps(payload)
-        yield f"event: {event_type}\ndata: {data}\n\n"
-
-
 @router.post("/phase2/stream")
 def phase2_stream(request: Phase2Request):
     """
@@ -161,7 +131,7 @@ def phase2_stream(request: Phase2Request):
     relevant agent (parallel), then deep_analysis_done, then phase2_complete with full result.
     """
     return StreamingResponse(
-        _phase2_sse_generator(request),
+        phase2_sse_generator(request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
