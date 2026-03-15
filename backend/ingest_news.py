@@ -15,7 +15,8 @@ def _load_articles() -> pd.DataFrame:
 
 
 def _row_to_text(row) -> str:
-    title, body = row["title"].strip(), row["body"].strip()
+    title = row.get("title", "").strip()
+    body = row.get("body", "").strip()
     if not body:
         return title
     if not title or title == body:
