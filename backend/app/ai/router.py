@@ -24,6 +24,7 @@ from app.ai.schemas import (
     RagRetrieveResponse,
     Phase1Request,
     Phase1Response,
+    OrchestrateRequest,
     Phase2Request,
     Phase2Response,
     IngestRequest,
@@ -134,6 +135,7 @@ def phase2(request: Phase2Request):
         initial_bets=bets,
         question_prompt=request.question_prompt or None,
         model=request.model,
+        year=request.year,
     )
 
     return Phase2Response(
@@ -162,11 +164,11 @@ def phase2_stream(request: Phase2Request):
 
 
 @router.post("/orchestrate", response_model=Phase2Response)
-def orchestrate(request: Phase1Request):
+def orchestrate(request: OrchestrateRequest):
     """
     Full orchestrated pipeline in one call:
-    1. All agents place an initial bet (phase1).
-    2. Orchestrator web-scrapes, identifies expertise, assigns agent(s), runs deep analysis (phase2).
+    1. All agents place an initial bet (phase1, no year filtering).
+    2. Orchestrator identifies expertise, assigns agent(s), runs deep analysis (phase2, year-filtered).
     Saves the full response (question, initial_bets, triggered_agents, deep_analysis, etc.) to Db2.
     """
     result = run_orchestrated_pipeline(
@@ -175,6 +177,7 @@ def orchestrate(request: Phase1Request):
         use_rag=request.use_rag,
         model=request.model,
         where_filter=request.where_filter,
+        year=request.year,
     )
     try:
         from app.db.db2 import save_orchestrate_response

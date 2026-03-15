@@ -13,6 +13,8 @@ Inference Endpoints) does not expose an /embeddings route.
 
 from __future__ import annotations
 
+import logging
+
 from app.config import CHAT_MODEL, DEFAULT_MODEL_NO_TOKENS
 from app.models import openai as _openai
 from app.models import gemini as _gemini

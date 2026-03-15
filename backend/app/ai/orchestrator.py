@@ -36,6 +36,16 @@ def _debug_log(msg: str):
     logger.debug(msg)
 
 
+def _merge_year_filter(where_filter: dict | None, year: int | None) -> dict | None:
+    """If year is provided, merge {"year": str(year)} into the where_filter."""
+    if year is None:
+        return where_filter
+    year_clause = {"year": str(year)}
+    if where_filter:
+        return {**where_filter, **year_clause}
+    return year_clause
+
+
 def _normalize_answer(answer: str) -> str:
     """Normalize a free-form answer to YES or NO."""
     a = (answer or "").strip().upper()
@@ -67,7 +77,7 @@ _BET_USER = """\
 You are participating in a prediction market that evaluates questions about locations in Toronto (e.g., hospitals, nurseries, attractions) to help mitigate asymmetric information for the public.
 
 Question: \"\"\"{question}\"\"\"
-
+{year_line}
 {context_block}
 
 Think carefully from your area of expertise. Consider all evidence — both supporting and opposing.
@@ -92,6 +102,7 @@ def _run_single_bet(
     model: str | None,
     question_embedding: list[float] | None = None,
     additional_context: str | None = None,
+    year: int | None = None,
 ) -> dict[str, Any]:
     context_parts: list[str] = []
     if context:
@@ -100,8 +111,9 @@ def _run_single_bet(
         context_parts.append(f"Additional context:\n{additional_context}")
     ctx = "\n\n".join(context_parts) if context_parts else "(No additional context.)"
 
+    year_line = f"\nFocus your analysis on data from the year {year}. Prioritize evidence and context relevant to {year}.\n" if year else ""
     system = _BET_SYSTEM.format(agent_name=agent.name, system_prompt=agent.system_prompt)
-    user = _BET_USER.format(question=question, context_block=ctx)
+    user = _BET_USER.format(question=question, context_block=ctx, year_line=year_line)
     raw = generate(user, system_prompt=system, model=agent.model or model, max_tokens=1000, json_mode=True)
 
     try:
@@ -371,14 +383,18 @@ def _run_single_agent_second_bet(
     context_for_agent: str,
     model: str | None,
     question_embedding: list[float] | None = None,
+    year: int | None = None,
+    where_filter: dict | None = None,
 ) -> dict[str, Any]:
     """Run bet for one triggered agent: agent's own RAG + orchestrator context as additional."""
     agent = get_agent(agent_id) or AGENTS[0]
-    rag_context = retrieve(question, top_k=4, collection_name="sample_rag")
+    effective_filter = _merge_year_filter(where_filter, year)
+    rag_context = retrieve(question, top_k=4, collection_name="sample_rag", where_filter=effective_filter)
     return _run_single_bet(
         question, agent, rag_context, model,
         question_embedding=question_embedding,
         additional_context=context_for_agent,
+        year=year,
     )
 
 
@@ -438,17 +454,19 @@ def run_orchestrated_phase2(
     question_prompt: str | None = None,
     model: str | None = None,
     where_filter: dict | None = None,
+    year: int | None = None,
 ) -> dict[str, Any]:
     """
     Phase 2 of the orchestrated pipeline:
-    1. Fetches RAG (news) for the question.
+    1. Fetches RAG (news) for the question, optionally filtered by year.
     2. Extracts key facts (with quotes from RAG) relevant to the topic.
     3. Orchestrator produces context_for_agents (using those facts) and selects relevant agents.
     4. Runs each triggered agent with the same shared context; collects results.
     """
     bets = initial_bets
     q_prompt = question_prompt or QUESTION_PROMPT_PLACEHOLDER
-    rag_chunks = retrieve_chunks(question, top_k=4, collection_name="news_rag", where_filter=where_filter)
+    effective_filter = _merge_year_filter(where_filter, year)
+    rag_chunks = retrieve_chunks(question, top_k=4, collection_name="news_rag", where_filter=effective_filter)
     chunks = rag_chunks if rag_chunks else []
 
     key_facts = _extract_key_facts_from_rag(question, chunks, model)
@@ -479,6 +497,8 @@ def run_orchestrated_phase2(
             context_for_agent=context_for_agents,
             model=model,
             question_embedding=q_emb,
+            year=year,
+            where_filter=where_filter,
         )
         triggered_agents.append({
             "agent_id": bet["agent_id"],
@@ -508,6 +528,7 @@ def run_phase2_stream(
     question_prompt: str | None = None,
     model: str | None = None,
     where_filter: dict | None = None,
+    year: int | None = None,
 ) -> Iterator[dict[str, Any]]:
     """
     Phase 2 with SSE: fetches RAG, extracts key facts, orchestrator produces context_for_agents and selects agents;
@@ -515,7 +536,8 @@ def run_phase2_stream(
     Events: orchestrator_done, agent_second_bet_done (per relevant agent), phase2_complete.
     """
     q_prompt = question_prompt or QUESTION_PROMPT_PLACEHOLDER
-    rag_chunks = retrieve_chunks(question, top_k=4, collection_name="news_rag", where_filter=where_filter)
+    effective_filter = _merge_year_filter(where_filter, year)
+    rag_chunks = retrieve_chunks(question, top_k=4, collection_name="news_rag", where_filter=effective_filter)
     chunks = rag_chunks if rag_chunks else []
 
     key_facts = _extract_key_facts_from_rag(question, chunks, model)
@@ -549,6 +571,8 @@ def run_phase2_stream(
                     context_for_agents,
                     model,
                     q_emb,
+                    year,
+                    where_filter,
                 ): info.get("agent_id")
                 for info in relevant_agents_info
             }
@@ -582,26 +606,28 @@ def run_orchestrated_pipeline(
     use_rag: bool = True,
     model: str | None = None,
     where_filter: dict | None = None,
+    year: int | None = None,
 ) -> dict[str, Any]:
     """
     Full orchestrated pipeline:
-    1. All agents place an initial bet.
+    1. All agents place an initial bet (no year filtering).
     2. Orchestrator identifies expertise, assigns RAG to relevant agents,
-       and each runs a second bet via the pipeline.
+       and each runs a second bet via the pipeline (year-filtered if provided).
     """
     effective_question = _question_with_location(question, location)
     _debug_log(f"Starting pipeline for question: {effective_question}")
-    # Phase 1 — initial bets
+    # Phase 1 — initial bets (year not used here)
     phase1 = run_orchestrated_initial(question=question, location=location, use_rag=use_rag, model=model, where_filter=where_filter)
     _debug_log("Phase 1 complete.")
 
-    # Phase 2 — fetches its own RAG; expertise selection + context assignment + second bets
+    # Phase 2 — fetches its own RAG with year filter; expertise selection + context assignment + second bets
     phase2 = run_orchestrated_phase2(
         question=phase1["question"],
         initial_bets=phase1["initial_bets"],
         question_prompt=QUESTION_PROMPT_PLACEHOLDER,
         model=model,
         where_filter=where_filter,
+        year=year,
     )
 
     return {**phase1, **phase2}

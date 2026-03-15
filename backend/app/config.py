@@ -10,6 +10,7 @@ OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "")
 GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
 EMBED_MODEL: str = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 CHAT_MODEL: str = os.getenv("CHAT_MODEL", "gpt-4o-mini")
+DEFAULT_MODEL_NO_TOKENS: str = os.getenv("DEFAULT_MODEL_NO_TOKENS", "gpt-4o-mini")
 CHAT_MAX_TOKENS: int = int(os.getenv("CHAT_MAX_TOKENS", "4096"))
 
 # Astra DB (vector store for RAG)
