@@ -13,3 +13,4 @@ pyarrow>=15.0.0
 railtracks
 feedparser>=6.0.0
 upstash-redis>=1.0.0
+supabase>=2.0.0
