@@ -122,7 +122,7 @@ def _run_single_bet(
         logger.warning("Agent %s returned non-JSON bet: %s", agent.id, raw)
         data = {"answer": "UNKNOWN", "reasoning": raw}
 
-    reasoning = str(data.get("reasoning", ""))
+    reasoning = str(data.get("reasoning", ""))[:300]
     bet_info = get_bet_for_agent(
         agent,
         question_prompt=question,

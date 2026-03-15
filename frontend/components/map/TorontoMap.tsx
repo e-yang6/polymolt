@@ -19,8 +19,8 @@ const TORONTO_ZOOM = 11.8
 /** Fly-in duration (ms) */
 const FLY_DURATION = 3200
 
-const CLICKABLE_LAYERS = ["poi-label", "transit-label", "building", "road-label"]
-const CLICKABLE_LAYERS_AFTER_LOAD = ["3d-buildings"]
+const CLICKABLE_LAYERS = ["poi-label", "transit-label", "road-label"]
+const CLICKABLE_LAYERS_AFTER_LOAD = ["3d-buildings", "building"]
 
 /** Small polygon footprint (lng/lat) and height in meters for 3D landmarks */
 const TORONTO_3D_LANDMARKS: Array<{
@@ -249,29 +249,71 @@ export const TorontoMap = forwardRef<TorontoMapRef, TorontoMapProps>(function To
   const handleMapClick = useCallback(
     (e: MapLayerMouseEvent) => {
       e.preventDefault()
-      const features = e.features
-      if (!features?.length) {
+      const map = mapRef.current
+
+      // Query ALL clickable layers at this point to find the best-named feature
+      const allLayers = [...CLICKABLE_LAYERS, ...CLICKABLE_LAYERS_AFTER_LOAD]
+      const allFeatures = map
+        ? map.queryRenderedFeatures(e.point, { layers: allLayers.filter((l) => map.getLayer(l)) })
+        : e.features ?? []
+
+      if (!allFeatures.length) {
         onFeatureSelect(null)
         return
       }
-      const f = features[0]
+
+      // Prefer a feature that actually has a name (POI labels, transit labels)
+      const named = allFeatures.find((f) => {
+        const p = f.properties ?? {}
+        return p.name || p.name_en || p.title || p["name:en"]
+      })
+      const f = named ?? allFeatures[0]
       const props = f.properties ?? {}
       const name =
         props.name ??
         props.name_en ??
         props.title ??
         props["name:en"] ??
-        "Unnamed"
+        null
       const type = props.type ?? props.class ?? f.layer?.id ?? "Unknown"
       const coords = (f.geometry?.type === "Point"
         ? (f.geometry as GeoJSON.Point).coordinates
         : e.lngLat.toArray()) as [number, number]
-      onFeatureSelect({
-        name: String(name),
-        type: String(type),
-        coordinates: coords,
-        layerId: f.layer?.id ?? "unknown",
-      })
+
+      if (name) {
+        onFeatureSelect({
+          name: String(name),
+          type: String(type),
+          coordinates: coords,
+          layerId: f.layer?.id ?? "unknown",
+        })
+      } else {
+        // No name from map data — reverse geocode to get the real place name
+        const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+        const [lng, lat] = coords
+        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=poi,address,neighborhood,locality,place&limit=1`)
+          .then((res) => res.json())
+          .then((data) => {
+            const placeName =
+              data.features?.[0]?.text ??
+              data.features?.[0]?.place_name ??
+              `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`
+            onFeatureSelect({
+              name: String(placeName),
+              type: data.features?.[0]?.properties?.category ?? String(type),
+              coordinates: coords,
+              layerId: f.layer?.id ?? "unknown",
+            })
+          })
+          .catch(() => {
+            onFeatureSelect({
+              name: `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+              type: String(type),
+              coordinates: coords,
+              layerId: f.layer?.id ?? "unknown",
+            })
+          })
+      }
     },
     [onFeatureSelect]
   )
