@@ -56,21 +56,24 @@ def run_pipeline(
 
     system = _resolve_system_prompt(system_prompt, agent_id)
     chat_model = _resolve_model(model, agent_id)
-    context = retrieve(message, top_k=4) if use_rag else ""
-    if context:
-        context_block = f"Context (from RAG):\n{context}\n\n"
-    else:
-        context_block = ""
+    rag_context = retrieve(message, top_k=4) if use_rag else ""
 
+    context_parts: list[str] = []
+    if rag_context:
+        context_parts.append(f"Context (from RAG):\n{rag_context}")
+    if additional_context:
+        context_parts.append(f"Additional context:\n{additional_context}")
+
+    context_block = "\n\n".join(context_parts) + "\n\n" if context_parts else ""
     user_content = f"{context_block}{message}"
     response = generate(user_content, system_prompt=system, model=chat_model, max_tokens=CHAT_MAX_TOKENS)
 
-    # Make RAG status extremely obvious in the output
-    if use_rag:
-        if context:
-            header = "🟢 [RAG DETECTED - Context found in database]\n" + "="*40 + "\n"
+    has_any_context = bool(rag_context or additional_context)
+    if use_rag or additional_context:
+        if has_any_context:
+            header = "🟢 [CONTEXT ACTIVE]\n" + "="*40 + "\n"
         else:
-            header = "🔴 [RAG NOT DETECTED - Search returned no results]\n" + "="*40 + "\n"
+            header = "🔴 [NO CONTEXT FOUND]\n" + "="*40 + "\n"
         return f"{header}{response}"
-    
+
     return response

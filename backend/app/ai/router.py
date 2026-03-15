@@ -7,7 +7,6 @@ from fastapi.responses import StreamingResponse
 
 from app.ai.pipeline import run_pipeline
 from app.ai.orchestrator import (
-    run_phase1,
     run_orchestrated_phase2,
     run_orchestrated_pipeline,
     run_orchestrated_initial,
@@ -92,10 +91,10 @@ def contextrun(request: ContextRunRequest):
 @router.post("/phase1", response_model=Phase1Response)
 def phase1(request: Phase1Request):
     """
-    Phase 1: Same as /run but runs every agent with /run.
-    Optional RAG, then run_pipeline per agent; web scrape. Returns initial_bets + rag_context for phase2.
+    Phase 1: RAG + all agents place initial bet (internal bet prompt) + web scrape.
+    Returns initial_bets + rag_context for phase2.
     """
-    result = run_phase1(
+    result = run_orchestrated_initial(
         question=request.question,
         use_rag=request.use_rag,
         model=request.model,
@@ -180,47 +179,6 @@ def orchestrate(request: Phase1Request):
         where_filter=request.where_filter,
     )
     return Phase2Response(**result)
-
-
-@router.post("/orchestrate/phase1", response_model=Phase1Response)
-def orchestrate_phase1(request: Phase1Request):
-    """
-    Phase 1 only (legacy naming): RAG + all agents place initial bet + web scrape.
-    Same as POST /phase1 but uses run_orchestrated_initial (supports where_filter).
-    """
-    result = run_orchestrated_initial(
-        question=request.question,
-        use_rag=request.use_rag,
-        model=request.model,
-        where_filter=request.where_filter,
-    )
-    return Phase1Response(**result)
-
-
-@router.post("/orchestrate/phase2", response_model=Phase2Response)
-def orchestrate_phase2(request: Phase2Request):
-    """
-    Phase 2 only (legacy naming): pass phase1 result; orchestrator assigns RAG and runs deep analysis.
-    Same as POST /phase2.
-    """
-    bets = [b.model_dump() for b in request.initial_bets]
-    phase2_result = run_orchestrated_phase2(
-        question=request.question,
-        initial_bets=bets,
-        web_scrape_snippets=request.web_scrape_snippets,
-        rag_context=request.rag_context,
-        rag_chunks=request.rag_chunks or None,
-        question_prompt=request.question_prompt or None,
-        model=request.model,
-    )
-    return Phase2Response(
-        question=request.question,
-        initial_bets=request.initial_bets,
-        web_scrape_snippets=request.web_scrape_snippets,
-        rag_context=request.rag_context,
-        rag_chunks=request.rag_chunks,
-        **phase2_result,
-    )
 
 
 @router.post("/rag/retrieve", response_model=RagRetrieveResponse)
