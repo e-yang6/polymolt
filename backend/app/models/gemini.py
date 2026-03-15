@@ -1,4 +1,4 @@
-"""Google Gemini provider — chat generation."""
+"""Google Gemini provider — chat generation and embeddings (uses google.genai)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from app.config import GOOGLE_API_KEY
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemini-1.5-flash"
+DEFAULT_EMBED_MODEL = "models/gemini-embedding-001"
 
 
 def generate(
@@ -19,18 +20,47 @@ def generate(
     max_tokens: int = 1024,
 ) -> str:
     """Call Gemini with optional system_instruction and return the text response."""
-    model = (model or DEFAULT_MODEL).strip()
+    model_name = (model or DEFAULT_MODEL).strip()
     if not GOOGLE_API_KEY:
         return "Error: GOOGLE_API_KEY is not set."
     try:
         from google import genai
-        genai.Client(api_key=GOOGLE_API_KEY)
-        kwargs: dict = {}
+        from google.genai import types
+
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        config_kwargs: dict = {"max_output_tokens": max_tokens}
         if system_prompt:
-            kwargs["system_instruction"] = system_prompt
-        gen = genai.GenerativeModel(model, **kwargs)
-        resp = gen.generate_content(user_prompt)
-        return (resp.text or "").strip()
+            config_kwargs["system_instruction"] = system_prompt
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(**config_kwargs),
+        )
+        return (response.text or "").strip()
     except Exception as e:
         logger.exception("Gemini generate failed")
         return f"Error: {e!s}"
+
+
+def embed(text: str, model: str | None = None) -> list[float]:
+    """Return an embedding vector for *text* using Gemini, or [] on failure."""
+    model_name = (model or DEFAULT_EMBED_MODEL).strip()
+    if not GOOGLE_API_KEY:
+        return []
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        result = client.models.embed_content(
+            model=model_name,
+            contents=text,
+            config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
+        )
+        if not result.embeddings:
+            return []
+        return list(result.embeddings[0].values)
+    except Exception as e:
+        logger.warning("Gemini embed failed: %s", e)
+        return []

@@ -6,3 +6,5 @@ __pycache__
 .env
 
 .ipynb_checkpoints
+backend/chroma_db
+backend/test_out.txt
