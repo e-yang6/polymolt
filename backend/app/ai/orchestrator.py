@@ -7,11 +7,11 @@ Flow
    bet with confidence + reasoning.
 2. **Orchestrator** (this module):
    a. Collects the reasons from all agents.
-   b. Web-scrapes the question (pure-Python, no AI).
+   b. Uses RAG (news/search) context only; no web scraping.
    c. Asks the LLM to identify which expertise the question falls under and
       picks the best-fit agent.
-   d. The assigned agent performs a deep analysis using the web data + the
-      other agents' reasoning as additional context.
+   d. The assigned agent performs a deep analysis using the RAG context +
+      the other agents' reasoning as additional context.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ from typing import Any, Iterator
 from app.models import generate
 from app.ai.pipeline import run_pipeline
 from app.ai.rag import retrieve, retrieve_chunks
-from app.ai.web_scraper import scrape_web
 
 # Placeholder for the question prompt until a real one is wired in.
 QUESTION_PROMPT_PLACEHOLDER = "[Placeholder: question prompt for the prediction market]"
@@ -173,11 +172,10 @@ def run_phase1_stream(
             bets.append(bet)
             yield {"event": "agent_done", "bet": bet}
 
-    scrape = scrape_web(question)
     result = {
         "question": question,
         "initial_bets": bets,
-        "web_scrape_snippets": scrape.snippets,
+        "web_scrape_snippets": [],
         "rag_context": rag_context,
         "rag_chunks": rag_chunks,
     }
@@ -192,7 +190,7 @@ _EXPERTISE_SYSTEM = (
     "Your job: (1) Read the RAG chunks and each agent's specialization (system prompt + description). "
     "(2) List every agent whose specialization is relevant to evaluating this location/claim; for each such agent, "
     "select the most relevant part(s) of the RAG and provide that as the context to give that agent. "
-    "Use the specialist agents' bets and web research to inform your choices to mitigate asymmetric information."
+    "Use the specialist agents' bets and the RAG context to inform your choices to mitigate asymmetric information."
 )
 
 _EXPERTISE_USER = """\
@@ -206,7 +204,7 @@ RAG chunks (retrieved context), numbered for reference:
 The following specialist agents each placed a bet on this question:
 {agent_summaries}
 
-Web research snippets:
+Additional context (e.g. from search; may be none):
 {web_snippets}
 
 Available agents — id, name, description, and full system prompt (their specialization):
@@ -301,13 +299,13 @@ A prediction market is evaluating a claim about a Toronto location (e.g., hospit
 Other analysts placed the following bets:
 {other_bets}
 
-Relevant web research:
+Additional context (if any):
 {web_snippets}
 
 {context_block}
 
 Provide a thorough, evidence-based analysis. Consider the other analysts'
-perspectives and the web research. Conclude with your final assessment
+perspectives and the RAG/context above. Conclude with your final assessment
 of whether the answer is YES or NO, and your overall confidence level.
 """
 
@@ -419,7 +417,7 @@ def run_orchestrated_initial(
     where_filter: dict | None = None,
 ) -> dict[str, Any]:
     """
-    Phase 1 (legacy): RAG + internal bet prompt per agent + web scrape.
+    Phase 1 (legacy): RAG + internal bet prompt per agent. No web scraping.
     Use run_phase1 for "same as /run per agent".
     """
     if use_rag:
@@ -429,12 +427,11 @@ def run_orchestrated_initial(
         rag_chunks = []
         context = ""
     bets = _run_all_bets(question, context, model)
-    scrape = scrape_web(question)
 
     return {
         "question": question,
         "initial_bets": bets,
-        "web_scrape_snippets": scrape.snippets,
+        "web_scrape_snippets": [],
         "rag_context": context,
         "rag_chunks": rag_chunks,
     }
@@ -450,7 +447,6 @@ def run_phase1(
     Phase 1: Same as /run but runs every agent with /run.
     1. Optional RAG retrieval (shared rag_context/rag_chunks for phase 2).
     2. For each agent, run the same pipeline as POST /run; collect responses as initial_bets.
-    3. Web scraping for additional non-AI context.
     """
     if use_rag:
         rag_chunks = retrieve_chunks(question, top_k=4, where_filter=where_filter)
@@ -459,11 +455,10 @@ def run_phase1(
         rag_chunks = []
         rag_context = ""
     bets = _run_phase1_via_pipeline(question, use_rag=use_rag, model=model)
-    scrape = scrape_web(question)
     return {
         "question": question,
         "initial_bets": bets,
-        "web_scrape_snippets": scrape.snippets,
+        "web_scrape_snippets": [],
         "rag_context": rag_context,
         "rag_chunks": rag_chunks,
     }
@@ -662,7 +657,7 @@ def run_orchestrated_pipeline(
        assigns the best agent for a deep analysis.
     """
     _debug_log(f"Starting pipeline for question: {question}")
-    # Phase 1 — initial bets + RAG + web scrape
+    # Phase 1 — initial bets + RAG (no web scrape)
     phase1 = run_orchestrated_initial(question=question, use_rag=use_rag, model=model, where_filter=where_filter)
     _debug_log("Phase 1 complete.")
     context = phase1["rag_context"]
