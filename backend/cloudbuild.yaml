@@ -5,8 +5,8 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-  # If your trigger uses repo root as source, add: dir: 'backend'
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'backend'
     args:
       - 'build'
       - '-t'
